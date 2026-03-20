@@ -1,0 +1,27 @@
+{
+  "name": "@t3tools/cloudflare",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:sandbox": "docker build --platform linux/amd64 -t t3code-sandbox -f ../../Dockerfile.sandbox ../..",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.1.0",
+    "@cloudflare/sandbox": "^0.7.18",
+    "@t3tools/contracts": "workspace:*",
+    "effect": "catalog:",
+    "hono": "^4.7.0",
+    "jose": "^6.2.2"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250313.0",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "wrangler": "^4.70.0"
+  }
+}

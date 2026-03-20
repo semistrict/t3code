@@ -1,9 +1,12 @@
 /**
- * ExecutionAgent - Standalone WebSocket server for remote execution.
+ * ExecutionAgent - Standalone HTTP server for remote execution.
  *
- * Accepts JSON-RPC messages matching the execution protocol, routes them
- * to in-process service implementations (CodexAdapter, TerminalManager,
- * GitCore, etc.), and pushes provider/terminal events back over WebSocket.
+ * Exposes two endpoints:
+ *   POST /rpc     — JSON-RPC request/response for execution methods
+ *   GET  /events  — SSE stream of push events (provider + terminal)
+ *
+ * The single client (UserDO) calls /rpc for commands and subscribes
+ * to /events for streaming provider and terminal events.
  *
  * Usage:
  *   bun run apps/server/src/executionAgent.ts --port 9999 --cwd /workspace
@@ -12,12 +15,12 @@
  */
 import { Effect, Layer, ManagedRuntime, Stream } from "effect";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { WebSocketServer, type WebSocket } from "ws";
 import {
   EXECUTION_METHODS,
   EXECUTION_PUSH_CHANNELS,
   type ExecutionRpcRequest,
   type ExecutionRpcResponse,
+  type ExecutionPushEvent,
   type TerminalEvent,
 } from "@t3tools/contracts";
 
@@ -117,19 +120,25 @@ async function main() {
   const runtime = ManagedRuntime.make(executionLayer);
   const execution = await runtime.runPromise(Effect.service(ExecutionService));
 
-  // Start WebSocket server
-  const wss = new WebSocketServer({ port });
-  const clients = new Set<WebSocket>();
+  // ── SSE event buffer ────────────────────────────────────────────
+  // Single client: one SSE controller at a time
+  let sseController: ReadableStreamDefaultController<Uint8Array> | null = null;
+  const encoder = new TextEncoder();
 
-  // Subscribe to push events and broadcast
+  function pushEvent(event: ExecutionPushEvent) {
+    if (sseController) {
+      sseController.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+    }
+  }
+
+  // Subscribe to terminal events
   const unsubTerminal = await runtime.runPromise(
     execution.terminal.subscribe((event: TerminalEvent) => {
-      const push = JSON.stringify({
+      pushEvent({
         type: "push",
         channel: EXECUTION_PUSH_CHANNELS.terminalEvent,
         data: event,
-      });
-      for (const ws of clients) ws.send(push);
+      } as ExecutionPushEvent);
     }),
   );
 
@@ -137,57 +146,93 @@ async function main() {
   void runtime.runPromise(
     Stream.runForEach(execution.provider.streamEvents, (event) =>
       Effect.sync(() => {
-        const push = JSON.stringify({
+        pushEvent({
           type: "push",
           channel: EXECUTION_PUSH_CHANNELS.providerEvent,
           data: event,
-        });
-        for (const ws of clients) ws.send(push);
+        } as ExecutionPushEvent);
       }),
     ),
   );
 
-  wss.on("connection", (ws) => {
-    clients.add(ws);
-    console.log("ExecutionAgent: client connected");
+  // ── HTTP server ─────────────────────────────────────────────────
+  Bun.serve({
+    port,
+    hostname: "0.0.0.0",
+    async fetch(req) {
+      const url = new URL(req.url);
 
-    ws.on("message", async (raw) => {
-      let request: ExecutionRpcRequest;
-      try {
-        request = JSON.parse(raw.toString());
-      } catch {
-        ws.send(JSON.stringify({ id: "unknown", error: { message: "Invalid JSON" } }));
-        return;
+      // Health / upgrade check
+      if (url.pathname === "/" || url.pathname === "/health") {
+        return new Response("OK", { status: 200 });
       }
 
-      try {
-        console.log(`ExecutionAgent: RPC ${request.method} (id=${request.id})`);
-        const result = await routeRequest(runtime, execution, request);
-        console.log(`ExecutionAgent: RPC ${request.method} completed (id=${request.id})`);
-        const response: ExecutionRpcResponse = { id: request.id, result };
-        ws.send(JSON.stringify(response));
-      } catch (err) {
-        const response: ExecutionRpcResponse = {
-          id: request.id,
-          error: { message: err instanceof Error ? err.message : String(err) },
-        };
-        ws.send(JSON.stringify(response));
-      }
-    });
+      // POST /rpc — JSON-RPC request/response
+      if (url.pathname === "/rpc" && req.method === "POST") {
+        let request: ExecutionRpcRequest;
+        try {
+          request = await req.json();
+        } catch {
+          return Response.json(
+            { id: "unknown", error: { message: "Invalid JSON" } },
+            { status: 400 },
+          );
+        }
 
-    ws.on("close", () => {
-      clients.delete(ws);
-      console.log("ExecutionAgent: client disconnected");
-    });
+        try {
+          console.log(`ExecutionAgent: RPC ${request.method} (id=${request.id})`);
+          const result = await routeRequest(runtime, execution, request);
+          console.log(`ExecutionAgent: RPC ${request.method} completed (id=${request.id})`);
+          const response: ExecutionRpcResponse = { id: request.id, result };
+          return Response.json(response);
+        } catch (err) {
+          const response: ExecutionRpcResponse = {
+            id: request.id,
+            error: { message: err instanceof Error ? err.message : String(err) },
+          };
+          return Response.json(response, { status: 500 });
+        }
+      }
+
+      // GET /events — SSE stream of push events
+      if (url.pathname === "/events" && req.method === "GET") {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            // Close any previous SSE connection (single client)
+            if (sseController) {
+              try { sseController.close(); } catch {}
+            }
+            sseController = controller;
+            // Send keepalive comment
+            controller.enqueue(encoder.encode(": connected\n\n"));
+          },
+          cancel() {
+            sseController = null;
+          },
+        });
+
+        return new Response(stream, {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        });
+      }
+
+      return new Response("Not Found", { status: 404 });
+    },
   });
 
-  console.log(`ExecutionAgent listening on ws://0.0.0.0:${port}`);
+  console.log(`ExecutionAgent listening on http://0.0.0.0:${port}`);
 
   // Handle shutdown
   process.on("SIGINT", () => {
     console.log("ExecutionAgent shutting down...");
     unsubTerminal();
-    wss.close();
+    if (sseController) {
+      try { sseController.close(); } catch {}
+    }
     process.exit(0);
   });
 }

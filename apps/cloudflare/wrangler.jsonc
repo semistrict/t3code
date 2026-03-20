@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "t3code",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-03-19",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "containers": [
+    {
+      "class_name": "SandboxDO",
+      "image": "./Dockerfile",
+      "instance_type": "standard-1",
+      "max_instances": 50
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "SandboxDO",
+        "name": "SandboxDO"
+      },
+      {
+        "class_name": "UserDO",
+        "name": "UserDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["SandboxDO", "UserDO"]
+    }
+  ]
+}
