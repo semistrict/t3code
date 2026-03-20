@@ -11,6 +11,7 @@ import { Effect, FileSystem, Layer, Path, ServiceMap } from "effect";
 export const DEFAULT_PORT = 3773;
 
 export type RuntimeMode = "web" | "desktop";
+export type ExecutionMode = "local" | "remote";
 
 /**
  * ServerConfigShape - Process/runtime configuration required by the server.
@@ -28,6 +29,8 @@ export interface ServerConfigShape {
   readonly authToken: string | undefined;
   readonly autoBootstrapProjectFromCwd: boolean;
   readonly logWebSocketEvents: boolean;
+  readonly executionMode: ExecutionMode;
+  readonly executionUrl: string | undefined;
 }
 
 /**
@@ -54,6 +57,8 @@ export class ServerConfig extends ServiceMap.Service<ServerConfig, ServerConfigS
           staticDir: undefined,
           devUrl: undefined,
           noBrowser: false,
+          executionMode: "local",
+          executionUrl: undefined,
         };
       }),
     );

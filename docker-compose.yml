@@ -1,0 +1,32 @@
+services:
+  execution:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile.execution
+    ports:
+      - "9999:9999"
+    volumes:
+      # Bind mount source code read-only
+      - .:/opt/t3code-src:ro,cached
+      # Writable working copy where bun install runs
+      - execution-workdir:/opt/t3code
+      - .:/workspace/t3code
+      # Mount codex auth so the agent can use ChatGPT credentials
+      - ~/.codex:/root/.codex
+    environment:
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+    command: >
+      bash -c "
+        export PATH=/root/.bun/bin:$$PATH &&
+        rsync -a --delete --exclude=node_modules --exclude=.git /opt/t3code-src/ /opt/t3code/ &&
+        cd /opt/t3code &&
+        bun install --ignore-scripts &&
+        cd node_modules/node-pty && node-gyp rebuild 2>/dev/null;
+        cd /opt/t3code &&
+        exec bun run apps/server/src/executionAgent.ts --port 9999 --cwd /workspace
+      "
+
+volumes:
+  workspace:
+  execution-workdir:

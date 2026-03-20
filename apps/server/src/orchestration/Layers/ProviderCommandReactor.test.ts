@@ -34,6 +34,11 @@ import { ProviderCommandReactorLive } from "./ProviderCommandReactor.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { ExecutionLocalLive } from "../../execution/Layers/ExecutionLocal.ts";
+import { TerminalManager, type TerminalManagerShape } from "../../terminal/Services/Manager.ts";
+import { GitManager, type GitManagerShape } from "../../git/Services/GitManager.ts";
+import { CheckpointDiffQuery, type CheckpointDiffQueryShape } from "../../checkpointing/Services/CheckpointDiffQuery.ts";
+import { Open, type OpenShape } from "../../open.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.makeUnsafe(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId =>
@@ -207,13 +212,44 @@ describe("ProviderCommandReactor", () => {
       Layer.provide(OrchestrationCommandReceiptRepositoryLive),
       Layer.provide(SqlitePersistenceMemory),
     );
+    const unsupportedFn = () => Effect.die(new Error("not implemented in test"));
+    const stubTerminalManager: TerminalManagerShape = {
+      open: unsupportedFn,
+      write: unsupportedFn,
+      resize: unsupportedFn,
+      clear: unsupportedFn,
+      restart: unsupportedFn,
+      close: unsupportedFn,
+      subscribe: () => Effect.succeed(() => {}),
+      dispose: Effect.void,
+    };
+    const stubGitManager: GitManagerShape = {
+      status: unsupportedFn,
+      runStackedAction: unsupportedFn,
+      resolvePullRequest: unsupportedFn,
+      preparePullRequestThread: unsupportedFn,
+    };
+    const stubCheckpointDiffQuery: CheckpointDiffQueryShape = {
+      getTurnDiff: unsupportedFn,
+      getFullThreadDiff: unsupportedFn,
+    };
+    const stubOpen: OpenShape = {
+      openBrowser: () => Effect.void,
+      openInEditor: () => Effect.void,
+    };
+
     const layer = ProviderCommandReactorLive.pipe(
+      Layer.provideMerge(ExecutionLocalLive),
       Layer.provideMerge(orchestrationLayer),
       Layer.provideMerge(Layer.succeed(ProviderService, service)),
       Layer.provideMerge(Layer.succeed(GitCore, { renameBranch } as unknown as GitCoreShape)),
       Layer.provideMerge(
         Layer.succeed(TextGeneration, { generateBranchName } as unknown as TextGenerationShape),
       ),
+      Layer.provideMerge(Layer.succeed(TerminalManager, stubTerminalManager as unknown as TerminalManagerShape)),
+      Layer.provideMerge(Layer.succeed(GitManager, stubGitManager as unknown as GitManagerShape)),
+      Layer.provideMerge(Layer.succeed(CheckpointDiffQuery, stubCheckpointDiffQuery as unknown as CheckpointDiffQueryShape)),
+      Layer.provideMerge(Layer.succeed(Open, stubOpen)),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), stateDir)),
       Layer.provideMerge(NodeServices.layer),
     );

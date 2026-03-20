@@ -37,6 +37,9 @@ import { GitServiceLive } from "./git/Layers/GitService";
 import { BunPtyAdapterLive } from "./terminal/Layers/BunPTY";
 import { NodePtyAdapterLive } from "./terminal/Layers/NodePTY";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService";
+import { OpenLive } from "./open";
+
+import { ExecutionLocalLive } from "./execution/Layers/ExecutionLocal.ts";
 
 export function makeServerProviderLayer(): Layer.Layer<
   ProviderService,
@@ -73,35 +76,64 @@ export function makeServerProviderLayer(): Layer.Layer<
   }).pipe(Layer.unwrap);
 }
 
-export function makeServerRuntimeServicesLayer() {
+/**
+ * Default execution-side service layers.
+ *
+ * These provide TerminalManager, GitCore, GitManager, CheckpointDiffQuery,
+ * Open, and TextGeneration. Tests can override individual services by
+ * merging Layer.succeed overrides BEFORE providing ExecutionLocalLive.
+ */
+export function makeExecutionServicesLayer() {
   const gitCoreLayer = GitCoreLive.pipe(Layer.provideMerge(GitServiceLive));
   const textGenerationLayer = CodexTextGenerationLive;
+  const checkpointDiffQueryLayer = CheckpointDiffQueryLive.pipe(
+    Layer.provideMerge(OrchestrationProjectionSnapshotQueryLive),
+    Layer.provideMerge(CheckpointStoreLive),
+  );
+  const terminalLayer = TerminalManagerLive.pipe(
+    Layer.provide(
+      typeof Bun !== "undefined" && process.platform !== "win32"
+        ? BunPtyAdapterLive
+        : NodePtyAdapterLive,
+    ),
+  );
+  const gitManagerLayer = GitManagerLive.pipe(
+    Layer.provideMerge(gitCoreLayer),
+    Layer.provideMerge(GitHubCliLive),
+    Layer.provideMerge(textGenerationLayer),
+  );
 
+  return Layer.mergeAll(
+    terminalLayer,
+    gitCoreLayer,
+    gitManagerLayer,
+    checkpointDiffQueryLayer,
+    OpenLive,
+    textGenerationLayer,
+  );
+}
+
+export function makeServerRuntimeServicesLayer() {
   const orchestrationLayer = OrchestrationEngineLive.pipe(
     Layer.provide(OrchestrationProjectionPipelineLive),
     Layer.provide(OrchestrationEventStoreLive),
     Layer.provide(OrchestrationCommandReceiptRepositoryLive),
   );
 
-  const checkpointDiffQueryLayer = CheckpointDiffQueryLive.pipe(
-    Layer.provideMerge(OrchestrationProjectionSnapshotQueryLive),
-    Layer.provideMerge(CheckpointStoreLive),
-  );
-
   const runtimeServicesLayer = Layer.mergeAll(
     orchestrationLayer,
     OrchestrationProjectionSnapshotQueryLive,
     CheckpointStoreLive,
-    checkpointDiffQueryLayer,
     RuntimeReceiptBusLive,
   );
+
   const runtimeIngestionLayer = ProviderRuntimeIngestionLive.pipe(
     Layer.provideMerge(runtimeServicesLayer),
   );
+
+  // ProviderCommandReactor needs ExecutionService from the context
   const providerCommandReactorLayer = ProviderCommandReactorLive.pipe(
     Layer.provideMerge(runtimeServicesLayer),
-    Layer.provideMerge(gitCoreLayer),
-    Layer.provideMerge(textGenerationLayer),
   );
   const checkpointReactorLayer = CheckpointReactorLive.pipe(
     Layer.provideMerge(runtimeServicesLayer),
@@ -112,25 +144,22 @@ export function makeServerRuntimeServicesLayer() {
     Layer.provideMerge(checkpointReactorLayer),
   );
 
-  const terminalLayer = TerminalManagerLive.pipe(
-    Layer.provide(
-      typeof Bun !== "undefined" && process.platform !== "win32"
-        ? BunPtyAdapterLive
-        : NodePtyAdapterLive,
-    ),
-  );
-
-  const gitManagerLayer = GitManagerLive.pipe(
-    Layer.provideMerge(gitCoreLayer),
-    Layer.provideMerge(GitHubCliLive),
-    Layer.provideMerge(textGenerationLayer),
-  );
-
+  // Output: orchestration services + keybindings.
+  // Requirements: ExecutionService (+ its deps) from the caller.
+  // The caller provides ExecutionLocalLive on top of execution service layers.
   return Layer.mergeAll(
     orchestrationReactorLayer,
-    gitCoreLayer,
-    gitManagerLayer,
-    terminalLayer,
     KeybindingsLive,
   ).pipe(Layer.provideMerge(NodeServices.layer));
+}
+
+/**
+ * Convenience: full runtime layer for production use.
+ * Composes orchestration + execution local + default execution services.
+ */
+export function makeFullServerRuntimeLayer() {
+  return makeServerRuntimeServicesLayer().pipe(
+    Layer.provideMerge(ExecutionLocalLive),
+    Layer.provideMerge(makeExecutionServicesLayer()),
+  );
 }

@@ -29,6 +29,13 @@ import {
   ProviderService,
   type ProviderServiceShape,
 } from "../../provider/Services/ProviderService.ts";
+import { ExecutionLocalLive } from "../../execution/Layers/ExecutionLocal.ts";
+import { TerminalManager, type TerminalManagerShape } from "../../terminal/Services/Manager.ts";
+import { GitCore, type GitCoreShape } from "../../git/Services/GitCore.ts";
+import { GitManager, type GitManagerShape } from "../../git/Services/GitManager.ts";
+import { TextGeneration, type TextGenerationShape } from "../../git/Services/TextGeneration.ts";
+import { CheckpointDiffQuery, type CheckpointDiffQueryShape } from "../../checkpointing/Services/CheckpointDiffQuery.ts";
+import { Open, type OpenShape } from "../../open.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { ProviderRuntimeIngestionLive } from "./ProviderRuntimeIngestion.ts";
@@ -165,10 +172,18 @@ describe("ProviderRuntimeIngestion", () => {
       Layer.provide(OrchestrationCommandReceiptRepositoryLive),
       Layer.provide(SqlitePersistenceMemory),
     );
+    const unsupportedFn = () => Effect.die(new Error("not implemented in test"));
     const layer = ProviderRuntimeIngestionLive.pipe(
+      Layer.provideMerge(ExecutionLocalLive),
       Layer.provideMerge(orchestrationLayer),
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
+      Layer.provideMerge(Layer.succeed(TerminalManager, { open: unsupportedFn, write: unsupportedFn, resize: unsupportedFn, clear: unsupportedFn, restart: unsupportedFn, close: unsupportedFn, subscribe: () => Effect.succeed(() => {}), dispose: Effect.void } as unknown as TerminalManagerShape)),
+      Layer.provideMerge(Layer.succeed(GitCore, {} as unknown as GitCoreShape)),
+      Layer.provideMerge(Layer.succeed(GitManager, {} as unknown as GitManagerShape)),
+      Layer.provideMerge(Layer.succeed(TextGeneration, {} as unknown as TextGenerationShape)),
+      Layer.provideMerge(Layer.succeed(CheckpointDiffQuery, {} as unknown as CheckpointDiffQueryShape)),
+      Layer.provideMerge(Layer.succeed(Open, { openBrowser: () => Effect.void, openInEditor: () => Effect.void } as OpenShape)),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
       Layer.provideMerge(NodeServices.layer),
     );

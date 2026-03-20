@@ -14,12 +14,18 @@ import {
   resolveStaticDir,
   ServerConfig,
   type RuntimeMode,
+  type ExecutionMode,
   type ServerConfigShape,
 } from "./config";
 import { fixPath, resolveStateDir } from "./os-jank";
 import { Open } from "./open";
 import * as SqlitePersistence from "./persistence/Layers/Sqlite";
-import { makeServerProviderLayer, makeServerRuntimeServicesLayer } from "./serverLayers";
+import {
+  makeServerProviderLayer,
+  makeFullServerRuntimeLayer,
+  makeServerRuntimeServicesLayer,
+} from "./serverLayers";
+import { makeExecutionClientLive } from "./execution/Layers/ExecutionClient.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery";
 import { ProviderHealthLive } from "./provider/Layers/ProviderHealth";
 import { Server } from "./wsServer";
@@ -42,6 +48,8 @@ interface CliInput {
   readonly authToken: Option.Option<string>;
   readonly autoBootstrapProjectFromCwd: Option.Option<boolean>;
   readonly logWebSocketEvents: Option.Option<boolean>;
+  readonly execution: Option.Option<ExecutionMode>;
+  readonly executionUrl: Option.Option<string>;
 }
 
 /**
@@ -174,6 +182,9 @@ const ServerConfigLive = (input: CliInput) =>
         env.host ??
         (mode === "desktop" ? "127.0.0.1" : undefined);
 
+      const executionMode: ExecutionMode = Option.getOrElse(input.execution, () => "local");
+      const executionUrl = Option.getOrUndefined(input.executionUrl);
+
       const config: ServerConfigShape = {
         mode,
         port,
@@ -187,22 +198,27 @@ const ServerConfigLive = (input: CliInput) =>
         authToken,
         autoBootstrapProjectFromCwd,
         logWebSocketEvents,
+        executionMode,
+        executionUrl,
       } satisfies ServerConfigShape;
 
       return config;
     }),
   );
 
-const LayerLive = (input: CliInput) =>
-  Layer.empty.pipe(
-    Layer.provideMerge(makeServerRuntimeServicesLayer()),
-    Layer.provideMerge(makeServerProviderLayer()),
-    Layer.provideMerge(ProviderHealthLive),
-    Layer.provideMerge(SqlitePersistence.layerConfig),
-    Layer.provideMerge(ServerLoggerLive),
-    Layer.provideMerge(AnalyticsServiceLayerLive),
-    Layer.provideMerge(ServerConfigLive(input)),
-  );
+function makeRuntimeLayer(input: CliInput) {
+  const executionMode = Option.getOrElse(input.execution, () => "local" as ExecutionMode);
+  const executionUrl = Option.getOrUndefined(input.executionUrl);
+
+  // In remote mode, use ExecutionClient (WebSocket to ExecutionAgent container)
+  // instead of ExecutionLocal (in-process services).
+  if (executionMode === "remote" && executionUrl) {
+    return makeServerRuntimeServicesLayer().pipe(
+      Layer.provideMerge(makeExecutionClientLive(executionUrl)),
+    );
+  }
+  return makeFullServerRuntimeLayer();
+}
 
 const isWildcardHost = (host: string | undefined): boolean =>
   host === "0.0.0.0" || host === "::" || host === "[::]";
@@ -280,7 +296,19 @@ const makeServerProgram = (input: CliInput) =>
     }
 
     return yield* stopSignal;
-  }).pipe(Effect.provide(LayerLive(input)));
+  }).pipe(
+    Effect.provide(makeRuntimeLayer(input) as Layer.Layer<any, any, any>),
+    Effect.provide(
+      Layer.empty.pipe(
+        Layer.provideMerge(makeServerProviderLayer()),
+        Layer.provideMerge(ProviderHealthLive),
+        Layer.provideMerge(SqlitePersistence.layerConfig),
+        Layer.provideMerge(ServerLoggerLive),
+        Layer.provideMerge(AnalyticsServiceLayerLive),
+        Layer.provideMerge(ServerConfigLive(input)),
+      ),
+    ),
+  );
 
 /**
  * These flags mirrors the environment variables and the config shape.
@@ -330,6 +358,18 @@ const logWebSocketEventsFlag = Flag.boolean("log-websocket-events").pipe(
   Flag.withAlias("log-ws-events"),
   Flag.optional,
 );
+const executionFlag = Flag.choice("execution", ["local", "remote"]).pipe(
+  Flag.withDescription(
+    "Execution mode. `local` runs services in-process (default). `remote` connects to an ExecutionAgent over WebSocket.",
+  ),
+  Flag.optional,
+);
+const executionUrlFlag = Flag.string("execution-url").pipe(
+  Flag.withDescription(
+    "WebSocket URL of the remote ExecutionAgent (e.g. ws://localhost:9999). Required when --execution=remote.",
+  ),
+  Flag.optional,
+);
 
 export const t3Cli = Command.make("t3", {
   mode: modeFlag,
@@ -341,6 +381,8 @@ export const t3Cli = Command.make("t3", {
   authToken: authTokenFlag,
   autoBootstrapProjectFromCwd: autoBootstrapProjectFromCwdFlag,
   logWebSocketEvents: logWebSocketEventsFlag,
+  execution: executionFlag,
+  executionUrl: executionUrlFlag,
 }).pipe(
   Command.withDescription("Run the T3 Code server."),
   Command.withHandler((input) => Effect.scoped(makeServerProgram(input))),

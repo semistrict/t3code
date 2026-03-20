@@ -1,0 +1,29 @@
+FROM node:24-slim
+
+# Install system dependencies:
+# - curl/unzip: bun installer
+# - git: git operations
+# - build-essential/python3: native module compilation (node-pty)
+RUN apt-get update && \
+    apt-get install -y curl git unzip build-essential python3 rsync && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install bun
+RUN curl -fsSL https://bun.sh/install | bash
+ENV BUN_INSTALL="/root/.bun"
+ENV PATH="$BUN_INSTALL/bin:$PATH"
+
+# Verify bun is available
+RUN bun --version
+
+# Install codex CLI globally
+RUN bun install -g @openai/codex@latest
+
+# Pre-create working directories
+RUN mkdir -p /opt/t3code /workspace
+
+WORKDIR /opt/t3code
+
+EXPOSE 9999
+
+CMD ["bun", "run", "apps/server/src/executionAgent.ts", "--port", "9999", "--cwd", "/workspace"]

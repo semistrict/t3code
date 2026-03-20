@@ -67,6 +67,11 @@ import {
   type TestProviderAdapterHarness,
 } from "./TestProviderAdapter.integration.ts";
 import { ServerConfig } from "../src/config.ts";
+import { ExecutionLocalLive } from "../src/execution/Layers/ExecutionLocal.ts";
+import { TerminalManager, type TerminalManagerShape } from "../src/terminal/Services/Manager.ts";
+import { GitManager, type GitManagerShape } from "../src/git/Services/GitManager.ts";
+import { CheckpointDiffQuery, type CheckpointDiffQueryShape } from "../src/checkpointing/Services/CheckpointDiffQuery.ts";
+import { Open, type OpenShape } from "../src/open.ts";
 
 function runGit(cwd: string, args: ReadonlyArray<string>) {
   return execFileSync("git", args, {
@@ -297,10 +302,32 @@ export const makeOrchestrationIntegrationHarness = (
     const textGenerationLayer = Layer.succeed(TextGeneration, {
       generateBranchName: () => Effect.succeed({ branch: null }),
     } as unknown as TextGenerationShape);
+    const unsupportedFn = () => Effect.die(new Error("not implemented in harness"));
+    const stubTerminalManager = Layer.succeed(TerminalManager, {
+      open: unsupportedFn, write: unsupportedFn, resize: unsupportedFn,
+      clear: unsupportedFn, restart: unsupportedFn, close: unsupportedFn,
+      subscribe: () => Effect.succeed(() => {}), dispose: Effect.void,
+    } as unknown as TerminalManagerShape);
+    const stubGitManager = Layer.succeed(GitManager, {
+      status: unsupportedFn, runStackedAction: unsupportedFn,
+      resolvePullRequest: unsupportedFn, preparePullRequestThread: unsupportedFn,
+    } as unknown as GitManagerShape);
+    const stubCheckpointDiffQuery = Layer.succeed(CheckpointDiffQuery, {
+      getTurnDiff: unsupportedFn, getFullThreadDiff: unsupportedFn,
+    } as unknown as CheckpointDiffQueryShape);
+    const stubOpen = Layer.succeed(Open, {
+      openBrowser: () => Effect.void, openInEditor: () => Effect.void,
+    } as OpenShape);
+
     const providerCommandReactorLayer = ProviderCommandReactorLive.pipe(
+      Layer.provideMerge(ExecutionLocalLive),
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(gitCoreLayer),
       Layer.provideMerge(textGenerationLayer),
+      Layer.provideMerge(stubTerminalManager),
+      Layer.provideMerge(stubGitManager),
+      Layer.provideMerge(stubCheckpointDiffQuery),
+      Layer.provideMerge(stubOpen),
     );
     const checkpointReactorLayer = CheckpointReactorLive.pipe(
       Layer.provideMerge(runtimeServicesLayer),

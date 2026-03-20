@@ -9,7 +9,8 @@ import { describe, expect, it, afterEach, vi } from "vitest";
 import { createServer } from "./wsServer";
 import WebSocket from "ws";
 import { ServerConfig, type ServerConfigShape } from "./config";
-import { makeServerProviderLayer, makeServerRuntimeServicesLayer } from "./serverLayers";
+import { makeServerProviderLayer, makeServerRuntimeServicesLayer, makeExecutionServicesLayer } from "./serverLayers";
+import { ExecutionLocalLive } from "./execution/Layers/ExecutionLocal.ts";
 
 import {
   DEFAULT_TERMINAL_ID,
@@ -510,6 +511,8 @@ describe("WebSocket Server", () => {
       authToken: options.authToken,
       autoBootstrapProjectFromCwd: options.autoBootstrapProjectFromCwd ?? false,
       logWebSocketEvents: options.logWebSocketEvents ?? Boolean(options.devUrl),
+      executionMode: "local",
+      executionUrl: undefined,
     } satisfies ServerConfigShape);
     const infrastructureLayer = providerLayer.pipe(Layer.provideMerge(persistenceLayer));
     const runtimeOverrides = Layer.mergeAll(
@@ -522,12 +525,24 @@ describe("WebSocket Server", () => {
         : Layer.empty,
     );
 
+    // Compose layers so test overrides reach ExecutionLocalLive:
+    // ExecutionLocalLive resolves deps from context (overrides win via merge).
+    // orchestrationLayer needs ExecutionService, so we provide it via provideMerge.
+    const executionDeps = Layer.merge(
+      makeExecutionServicesLayer(),
+      Layer.merge(runtimeOverrides, openLayer),
+    ).pipe(
+      Layer.provideMerge(infrastructureLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+    const executionLayer = ExecutionLocalLive.pipe(Layer.provide(executionDeps));
+    const orchestrationLayer = makeServerRuntimeServicesLayer().pipe(
+      Layer.provide(infrastructureLayer),
+      Layer.provide(executionLayer),
+    );
     const runtimeLayer = Layer.merge(
-      Layer.merge(
-        makeServerRuntimeServicesLayer().pipe(Layer.provide(infrastructureLayer)),
-        infrastructureLayer,
-      ),
-      runtimeOverrides,
+      Layer.merge(orchestrationLayer, infrastructureLayer),
+      executionLayer,
     );
     const dependenciesLayer = Layer.empty.pipe(
       Layer.provideMerge(runtimeLayer),

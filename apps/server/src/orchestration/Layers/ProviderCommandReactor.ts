@@ -17,11 +17,9 @@ import { Cache, Cause, Duration, Effect, Layer, Option, Schema, Stream } from "e
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
-import { GitCore } from "../../git/Services/GitCore.ts";
 import { ProviderAdapterRequestError, ProviderServiceError } from "../../provider/Errors.ts";
-import { TextGeneration } from "../../git/Services/TextGeneration.ts";
-import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
+import { ExecutionService } from "../../execution/Services/ExecutionService.ts";
 import {
   ProviderCommandReactor,
   type ProviderCommandReactorShape,
@@ -141,9 +139,7 @@ function buildGeneratedWorktreeBranchName(raw: string): string {
 
 const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
-  const providerService = yield* ProviderService;
-  const git = yield* GitCore;
-  const textGeneration = yield* TextGeneration;
+  const execution = yield* ExecutionService;
   const handledTurnStartKeys = yield* Cache.make<string, true>({
     capacity: HANDLED_TURN_START_KEY_MAX,
     timeToLive: HANDLED_TURN_START_KEY_TTL,
@@ -259,7 +255,7 @@ const make = Effect.gen(function* () {
     });
 
     const resolveActiveSession = (threadId: ThreadId) =>
-      providerService
+      execution.provider
         .listSessions()
         .pipe(Effect.map((sessions) => sessions.find((session) => session.threadId === threadId)));
 
@@ -267,7 +263,7 @@ const make = Effect.gen(function* () {
       readonly resumeCursor?: unknown;
       readonly provider?: ProviderKind;
     }) =>
-      providerService.startSession(threadId, {
+      execution.provider.startSession(threadId, {
         threadId,
         ...((input?.provider ?? preferredProvider)
           ? { provider: input?.provider ?? preferredProvider }
@@ -308,7 +304,7 @@ const make = Effect.gen(function* () {
       const sessionModelSwitch =
         currentProvider === undefined
           ? "in-session"
-          : (yield* providerService.getCapabilities(currentProvider)).sessionModelSwitch;
+          : (yield* execution.provider.getCapabilities(currentProvider)).sessionModelSwitch;
       const modelChanged = options?.model !== undefined && options.model !== activeSession?.model;
       const shouldRestartForModelChange = modelChanged && sessionModelSwitch === "restart-session";
       const previousModelOptions = threadModelOptions.get(threadId);
@@ -395,7 +391,7 @@ const make = Effect.gen(function* () {
     }
     const normalizedInput = toNonEmptyProviderInput(input.messageText);
     const normalizedAttachments = input.attachments ?? [];
-    const activeSession = yield* providerService
+    const activeSession = yield* execution.provider
       .listSessions()
       .pipe(
         Effect.map((sessions) => sessions.find((session) => session.threadId === input.threadId)),
@@ -403,10 +399,10 @@ const make = Effect.gen(function* () {
     const sessionModelSwitch =
       activeSession === undefined
         ? "in-session"
-        : (yield* providerService.getCapabilities(activeSession.provider)).sessionModelSwitch;
+        : (yield* execution.provider.getCapabilities(activeSession.provider)).sessionModelSwitch;
     const modelForTurn = sessionModelSwitch === "unsupported" ? activeSession?.model : input.model;
 
-    yield* providerService.sendTurn({
+    yield* execution.provider.sendTurn({
       threadId: input.threadId,
       ...(normalizedInput ? { input: normalizedInput } : {}),
       ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
@@ -444,7 +440,7 @@ const make = Effect.gen(function* () {
     const oldBranch = input.branch;
     const cwd = input.worktreePath;
     const attachments = input.attachments ?? [];
-    yield* textGeneration
+    yield* execution.textGeneration
       .generateBranchName({
         cwd,
         message: input.messageText,
@@ -465,7 +461,7 @@ const make = Effect.gen(function* () {
           if (targetBranch === oldBranch) return Effect.void;
 
           return Effect.flatMap(
-            git.renameBranch({ cwd, oldBranch, newBranch: targetBranch }),
+            execution.git.renameBranch({ cwd, oldBranch, newBranch: targetBranch }),
             (renamed) =>
               orchestrationEngine.dispatch({
                 type: "thread.meta.update",
@@ -568,7 +564,7 @@ const make = Effect.gen(function* () {
     }
 
     // Orchestration turn ids are not provider turn ids, so interrupt by session.
-    yield* providerService.interruptTurn({ threadId: event.payload.threadId });
+    yield* execution.provider.interruptTurn({ threadId: event.payload.threadId });
   });
 
   const processApprovalResponseRequested = Effect.fnUntraced(function* (
@@ -591,7 +587,7 @@ const make = Effect.gen(function* () {
       });
     }
 
-    yield* providerService
+    yield* execution.provider
       .respondToRequest({
         threadId: event.payload.threadId,
         requestId: event.payload.requestId,
@@ -638,7 +634,7 @@ const make = Effect.gen(function* () {
       });
     }
 
-    yield* providerService
+    yield* execution.provider
       .respondToUserInput({
         threadId: event.payload.threadId,
         requestId: event.payload.requestId,
@@ -671,7 +667,7 @@ const make = Effect.gen(function* () {
 
     const now = event.payload.createdAt;
     if (thread.session && thread.session.status !== "stopped") {
-      yield* providerService.stopSession({ threadId: thread.id });
+      yield* execution.provider.stopSession({ threadId: thread.id });
     }
 
     yield* setThreadSession({

@@ -46,20 +46,16 @@ import {
 import { WebSocketServer, type WebSocket } from "ws";
 
 import { createLogger } from "./logger";
-import { GitManager } from "./git/Services/GitManager.ts";
-import { TerminalManager } from "./terminal/Services/Manager.ts";
 import { Keybindings } from "./keybindings";
-import { searchWorkspaceEntries } from "./workspaceEntries";
 import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery";
 import { OrchestrationReactor } from "./orchestration/Services/OrchestrationReactor";
 import { ProviderService } from "./provider/Services/ProviderService";
 import { ProviderHealth } from "./provider/Services/ProviderHealth";
-import { CheckpointDiffQuery } from "./checkpointing/Services/CheckpointDiffQuery";
 import { clamp } from "effect/Number";
-import { Open, resolveAvailableEditors } from "./open";
+import { resolveAvailableEditors } from "./open";
 import { ServerConfig } from "./config";
-import { GitCore } from "./git/Services/GitCore.ts";
+import { ExecutionService } from "./execution/Services/ExecutionService.ts";
 import { tryHandleProjectFaviconRequest } from "./projectFaviconRoute";
 import {
   ATTACHMENTS_ROUTE_PREFIX,
@@ -153,47 +149,6 @@ function websocketRawToString(raw: unknown): string | null {
   return null;
 }
 
-function toPosixRelativePath(input: string): string {
-  return input.replaceAll("\\", "/");
-}
-
-function resolveWorkspaceWritePath(params: {
-  workspaceRoot: string;
-  relativePath: string;
-  path: Path.Path;
-}): Effect.Effect<{ absolutePath: string; relativePath: string }, RouteRequestError> {
-  const normalizedInputPath = params.relativePath.trim();
-  if (params.path.isAbsolute(normalizedInputPath)) {
-    return Effect.fail(
-      new RouteRequestError({
-        message: "Workspace file path must be relative to the project root.",
-      }),
-    );
-  }
-
-  const absolutePath = params.path.resolve(params.workspaceRoot, normalizedInputPath);
-  const relativeToRoot = toPosixRelativePath(
-    params.path.relative(params.workspaceRoot, absolutePath),
-  );
-  if (
-    relativeToRoot.length === 0 ||
-    relativeToRoot === "." ||
-    relativeToRoot.startsWith("../") ||
-    relativeToRoot === ".." ||
-    params.path.isAbsolute(relativeToRoot)
-  ) {
-    return Effect.fail(
-      new RouteRequestError({
-        message: "Workspace file path must stay within the project root.",
-      }),
-    );
-  }
-
-  return Effect.succeed({
-    absolutePath,
-    relativePath: relativeToRoot,
-  });
-}
 
 function stripRequestTag<T extends { _tag: string }>(body: T) {
   return Struct.omit(body, ["_tag"]);
@@ -205,18 +160,14 @@ const decodeWebSocketRequest = decodeJsonResult(WebSocketRequest);
 export type ServerCoreRuntimeServices =
   | OrchestrationEngineService
   | ProjectionSnapshotQuery
-  | CheckpointDiffQuery
   | OrchestrationReactor
   | ProviderService
   | ProviderHealth;
 
 export type ServerRuntimeServices =
   | ServerCoreRuntimeServices
-  | GitManager
-  | GitCore
-  | TerminalManager
+  | ExecutionService
   | Keybindings
-  | Open
   | AnalyticsService;
 
 export class ServerLifecycleError extends Schema.TaggedErrorClass<ServerLifecycleError>()(
@@ -247,14 +198,13 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     host,
     logWebSocketEvents,
     autoBootstrapProjectFromCwd,
+    executionMode,
   } = serverConfig;
   const availableEditors = resolveAvailableEditors();
 
-  const gitManager = yield* GitManager;
-  const terminalManager = yield* TerminalManager;
+  const execution = yield* ExecutionService;
   const keybindingsManager = yield* Keybindings;
   const providerHealth = yield* ProviderHealth;
-  const git = yield* GitCore;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
 
@@ -300,7 +250,13 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     readonly command: ClientOrchestrationCommand;
   }) {
     const normalizeProjectWorkspaceRoot = Effect.fnUntraced(function* (workspaceRoot: string) {
-      const normalizedWorkspaceRoot = path.resolve(yield* expandHomePath(workspaceRoot.trim()));
+      const trimmed = workspaceRoot.trim();
+      // In remote execution mode, the workspace path exists only inside the
+      // execution container — skip host-side stat validation.
+      if (executionMode === "remote") {
+        return trimmed.startsWith("/") ? trimmed : path.resolve(trimmed);
+      }
+      const normalizedWorkspaceRoot = path.resolve(yield* expandHomePath(trimmed));
       const workspaceStat = yield* fileSystem
         .stat(normalizedWorkspaceRoot)
         .pipe(Effect.catch(() => Effect.succeed(null)));
@@ -600,9 +556,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
 
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionReadModelQuery = yield* ProjectionSnapshotQuery;
-  const checkpointDiffQuery = yield* CheckpointDiffQuery;
   const orchestrationReactor = yield* OrchestrationReactor;
-  const { openInEditor } = yield* Open;
 
   const subscriptionsScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(subscriptionsScope, Exit.void));
@@ -689,7 +643,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   >();
   const runPromise = Effect.runPromiseWith(runtimeServices);
 
-  const unsubscribeTerminalEvents = yield* terminalManager.subscribe(
+  const unsubscribeTerminalEvents = yield* execution.terminal.subscribe(
     (event) => void Effect.runPromise(pushBus.publishAll(WS_CHANNELS.terminalEvent, event)),
   );
   yield* Effect.addFinalizer(() => Effect.sync(() => unsubscribeTerminalEvents()));
@@ -717,12 +671,12 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
 
       case ORCHESTRATION_WS_METHODS.getTurnDiff: {
         const body = stripRequestTag(request.body);
-        return yield* checkpointDiffQuery.getTurnDiff(body);
+        return yield* execution.checkpoint.getTurnDiff(body);
       }
 
       case ORCHESTRATION_WS_METHODS.getFullThreadDiff: {
         const body = stripRequestTag(request.body);
-        return yield* checkpointDiffQuery.getFullThreadDiff(body);
+        return yield* execution.checkpoint.getFullThreadDiff(body);
       }
 
       case ORCHESTRATION_WS_METHODS.replayEvents: {
@@ -739,131 +693,102 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
 
       case WS_METHODS.projectsSearchEntries: {
         const body = stripRequestTag(request.body);
-        return yield* Effect.tryPromise({
-          try: () => searchWorkspaceEntries(body),
-          catch: (cause) =>
-            new RouteRequestError({
-              message: `Failed to search workspace entries: ${String(cause)}`,
-            }),
-        });
+        return yield* execution.fs.searchEntries(body);
       }
 
       case WS_METHODS.projectsWriteFile: {
         const body = stripRequestTag(request.body);
-        const target = yield* resolveWorkspaceWritePath({
-          workspaceRoot: body.cwd,
-          relativePath: body.relativePath,
-          path,
-        });
-        yield* fileSystem
-          .makeDirectory(path.dirname(target.absolutePath), { recursive: true })
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new RouteRequestError({
-                  message: `Failed to prepare workspace path: ${String(cause)}`,
-                }),
-            ),
-          );
-        yield* fileSystem.writeFileString(target.absolutePath, body.contents).pipe(
-          Effect.mapError(
-            (cause) =>
-              new RouteRequestError({
-                message: `Failed to write workspace file: ${String(cause)}`,
-              }),
-          ),
-        );
-        return { relativePath: target.relativePath };
+        return yield* execution.fs.writeFile(body);
       }
 
       case WS_METHODS.shellOpenInEditor: {
         const body = stripRequestTag(request.body);
-        return yield* openInEditor(body);
+        return yield* execution.shell.openInEditor(body);
       }
 
       case WS_METHODS.gitStatus: {
         const body = stripRequestTag(request.body);
-        return yield* gitManager.status(body);
+        return yield* execution.gitManager.status(body);
       }
 
       case WS_METHODS.gitPull: {
         const body = stripRequestTag(request.body);
-        return yield* git.pullCurrentBranch(body.cwd);
+        return yield* execution.git.pullCurrentBranch(body.cwd);
       }
 
       case WS_METHODS.gitRunStackedAction: {
         const body = stripRequestTag(request.body);
-        return yield* gitManager.runStackedAction(body);
+        return yield* execution.gitManager.runStackedAction(body);
       }
 
       case WS_METHODS.gitResolvePullRequest: {
         const body = stripRequestTag(request.body);
-        return yield* gitManager.resolvePullRequest(body);
+        return yield* execution.gitManager.resolvePullRequest(body);
       }
 
       case WS_METHODS.gitPreparePullRequestThread: {
         const body = stripRequestTag(request.body);
-        return yield* gitManager.preparePullRequestThread(body);
+        return yield* execution.gitManager.preparePullRequestThread(body);
       }
 
       case WS_METHODS.gitListBranches: {
         const body = stripRequestTag(request.body);
-        return yield* git.listBranches(body);
+        return yield* execution.git.listBranches(body);
       }
 
       case WS_METHODS.gitCreateWorktree: {
         const body = stripRequestTag(request.body);
-        return yield* git.createWorktree(body);
+        return yield* execution.git.createWorktree(body);
       }
 
       case WS_METHODS.gitRemoveWorktree: {
         const body = stripRequestTag(request.body);
-        return yield* git.removeWorktree(body);
+        return yield* execution.git.removeWorktree(body);
       }
 
       case WS_METHODS.gitCreateBranch: {
         const body = stripRequestTag(request.body);
-        return yield* git.createBranch(body);
+        return yield* execution.git.createBranch(body);
       }
 
       case WS_METHODS.gitCheckout: {
         const body = stripRequestTag(request.body);
-        return yield* Effect.scoped(git.checkoutBranch(body));
+        return yield* Effect.scoped(execution.git.checkoutBranch(body));
       }
 
       case WS_METHODS.gitInit: {
         const body = stripRequestTag(request.body);
-        return yield* git.initRepo(body);
+        return yield* execution.git.initRepo(body);
       }
 
       case WS_METHODS.terminalOpen: {
         const body = stripRequestTag(request.body);
-        return yield* terminalManager.open(body);
+        return yield* execution.terminal.open(body);
       }
 
       case WS_METHODS.terminalWrite: {
         const body = stripRequestTag(request.body);
-        return yield* terminalManager.write(body);
+        return yield* execution.terminal.write(body);
       }
 
       case WS_METHODS.terminalResize: {
         const body = stripRequestTag(request.body);
-        return yield* terminalManager.resize(body);
+        return yield* execution.terminal.resize(body);
       }
 
       case WS_METHODS.terminalClear: {
         const body = stripRequestTag(request.body);
-        return yield* terminalManager.clear(body);
+        return yield* execution.terminal.clear(body);
       }
 
       case WS_METHODS.terminalRestart: {
         const body = stripRequestTag(request.body);
-        return yield* terminalManager.restart(body);
+        return yield* execution.terminal.restart(body);
       }
 
       case WS_METHODS.terminalClose: {
         const body = stripRequestTag(request.body);
-        return yield* terminalManager.close(body);
+        return yield* execution.terminal.close(body);
       }
 
       case WS_METHODS.serverGetConfig:
