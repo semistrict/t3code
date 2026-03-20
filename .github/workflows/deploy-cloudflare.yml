@@ -29,6 +29,15 @@ jobs:
         working-directory: apps/web
         run: bun run build
 
+      - name: Debug - build bundle and check for global scope issues
+        working-directory: apps/cloudflare
+        run: |
+          npx wrangler deploy --dry-run --outdir /tmp/bundle
+          echo "Bundle size:"
+          wc -l /tmp/bundle/index.js
+          echo "Checking for potential global scope violations..."
+          grep -n "var safe.*= setTimeout\|var safe.*= Math.random\|var safe.*= clearTimeout\|var safe.*= setInterval" /tmp/bundle/index.js || echo "No safeFoo references found"
+
       - name: Deploy Worker
         working-directory: apps/cloudflare
         run: bun run deploy
