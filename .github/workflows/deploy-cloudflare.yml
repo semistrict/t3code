@@ -31,7 +31,7 @@ jobs:
 
       - name: Deploy Worker
         working-directory: apps/cloudflare
-        run: bun run deploy
+        run: npx wrangler deploy --alias fast-check:./src/stubs/fast-check.ts
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
