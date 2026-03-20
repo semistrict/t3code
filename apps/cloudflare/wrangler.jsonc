@@ -3,7 +3,7 @@
   "name": "t3code",
   "main": "src/index.ts",
   "compatibility_date": "2026-03-19",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat_v2"],
   "observability": {
     "enabled": true
   },
