@@ -16,8 +16,9 @@
   "scripts": {
     "dev": "bun run src/index.ts",
     "build": "node scripts/cli.ts build",
+    "build:agent": "bun build src/executionAgent.ts --compile --outfile dist/t3code-execution-agent --target bun-linux-x64",
     "start": "node dist/index.mjs",
-    "prepare": "effect-language-service patch",
+    "prepare": "effect-language-service patch || true",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

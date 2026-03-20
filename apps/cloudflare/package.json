@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:sandbox": "docker build --platform linux/amd64 -t t3code-sandbox -f ../../Dockerfile.sandbox ../..",
+    "build:sandbox": "bun run --filter t3 build:agent && mkdir -p dist && cp ../server/dist/t3code-execution-agent dist/ && docker build --platform linux/amd64 -t t3code-sandbox .",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "cf-typegen": "wrangler types",

@@ -172,7 +172,7 @@ export class SandboxManager {
     try {
       const processes = await sandbox.listProcesses();
       const running = processes.find(
-        (p) => p.status === "running" && p.command.includes("executionAgent"),
+        (p) => p.status === "running" && p.command.includes("t3code-execution-agent"),
       );
       if (running) {
         await running.waitForPort(EXECUTION_AGENT_PORT, {
@@ -197,7 +197,7 @@ export class SandboxManager {
     }
 
     const proc = await sandbox.startProcess(
-      `bun run /opt/t3code/apps/server/src/executionAgent.ts --port ${EXECUTION_AGENT_PORT} --cwd /workspace`,
+      `/opt/t3code/t3code-execution-agent --port ${EXECUTION_AGENT_PORT} --cwd /workspace`,
       {
         cwd: "/opt/t3code",
         env: {
