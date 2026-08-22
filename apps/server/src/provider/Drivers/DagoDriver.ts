@@ -129,7 +129,11 @@ export const DagoDriver: ProviderDriver<DagoSettings, DagoDriverEnv> = {
           }),
       });
 
-      const checkProvider = checkDagoProviderStatus(effectiveConfig, processEnv).pipe(
+      const checkProvider = checkDagoProviderStatus(
+        effectiveConfig,
+        { cwd: serverConfig.cwd, stateDir },
+        processEnv,
+      ).pipe(
         Effect.map(stampIdentity),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       );

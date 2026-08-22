@@ -3,6 +3,7 @@
 import * as NodeFS from "node:fs";
 
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -308,6 +309,20 @@ const program = Effect.gen(function* () {
   );
 
   yield* agent.handleAuthenticate(() => Effect.succeed({}));
+
+  yield* agent.handleExtRequest(
+    "_dago/models/list",
+    Schema.Struct({ version: Schema.Literal(1) }),
+    () =>
+      Effect.succeed({
+        version: 1,
+        default_model: "openai:gpt-test-default",
+        models: [
+          { id: "openai:gpt-test-default", name: "GPT Test Default" },
+          { id: "openrouter:vendor/test-model", name: "Test Model" },
+        ],
+      }),
+  );
 
   yield* agent.handleCreateSession(() =>
     Effect.succeed({

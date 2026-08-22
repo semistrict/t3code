@@ -69,7 +69,8 @@ still appears in the thread picker only after its CLI is available to the T3 Cod
 
 dago sessions include background workflow observability. Workflow phases, workers, usage, persisted
 scripts, completion, failure, and cancellation appear in the same Agents surface as other provider
-tasks. The server stores each dago provider instance under its own state directory.
+tasks. The model picker reflects the catalog reported by dacode over ACP. The server stores each
+dago provider instance under its own state directory.
 
 Cursor is the one to watch: install Cursor CLI, which provides the `cursor-agent` binary that
 T3 Code looks for, but authenticate with `agent login`, not `cursor-agent login`.

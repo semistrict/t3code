@@ -26,6 +26,7 @@ import {
   enrichProviderSnapshotWithVersionAdvisory,
   type ProviderMaintenanceCapabilities,
 } from "../providerMaintenance.ts";
+import { listDagoAcpModels, type DagoAcpModelList } from "../acp/DagoAcpSupport.ts";
 
 const DAGO_PRESENTATION = {
   displayName: "dago",
@@ -34,20 +35,37 @@ const DAGO_PRESENTATION = {
 } as const;
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({ optionDescriptors: [] });
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
-
-const DAGO_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
-  {
-    slug: "gpt-5.6-terra",
-    name: "GPT-5.6 Terra",
-    isCustom: false,
-    capabilities: EMPTY_CAPABILITIES,
-  },
-  { slug: "gpt-5.6-sol", name: "GPT-5.6 Sol", isCustom: false, capabilities: EMPTY_CAPABILITIES },
-  { slug: "gpt-5.6-luna", name: "GPT-5.6 Luna", isCustom: false, capabilities: EMPTY_CAPABILITIES },
-];
+const MODEL_PROBE_TIMEOUT_MS = 10_000;
 
 function dagoModelsFromSettings(customModels: ReadonlyArray<string> | undefined) {
-  return providerModelsFromSettings(DAGO_BUILT_IN_MODELS, customModels ?? [], EMPTY_CAPABILITIES);
+  return providerModelsFromSettings([], customModels ?? [], EMPTY_CAPABILITIES);
+}
+
+export function dagoModelsFromAcp(
+  inventory: DagoAcpModelList,
+  customModels: ReadonlyArray<string> | undefined,
+) {
+  const seen = new Set<string>();
+  const discovered: ServerProviderModel[] = [];
+  for (const candidate of inventory.models) {
+    const slug = candidate.id.trim();
+    const name = candidate.name.trim();
+    if (!slug || !name || seen.has(slug)) {
+      continue;
+    }
+    seen.add(slug);
+    const separator = slug.indexOf(":");
+    const subProvider = separator > 0 ? slug.slice(0, separator) : undefined;
+    discovered.push({
+      slug,
+      name,
+      ...(subProvider ? { subProvider } : {}),
+      isCustom: false,
+      isDefault: slug === inventory.default_model,
+      capabilities: EMPTY_CAPABILITIES,
+    });
+  }
+  return providerModelsFromSettings(discovered, customModels ?? [], EMPTY_CAPABILITIES);
 }
 
 export function buildInitialDagoProviderSnapshot(
@@ -82,6 +100,7 @@ export function buildInitialDagoProviderSnapshot(
 
 export const checkDagoProviderStatus = Effect.fn("checkDagoProviderStatus")(function* (
   settings: DagoSettings,
+  options: { readonly cwd: string; readonly stateDir: string },
   environment: NodeJS.ProcessEnv = process.env,
 ) {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
@@ -135,17 +154,67 @@ export const checkDagoProviderStatus = Effect.fn("checkDagoProviderStatus")(func
   }
   const output = result.success.value;
   const version = parseGenericCliVersion(`${output.stdout}\n${output.stderr}`);
+  if (output.code !== 0) {
+    return buildServerProvider({
+      presentation: DAGO_PRESENTATION,
+      enabled: true,
+      checkedAt,
+      models,
+      probe: {
+        installed: true,
+        version,
+        status: "error",
+        auth: { status: "unknown" },
+        message: "The dacode CLI failed to run.",
+      },
+    });
+  }
+  const inventoryResult = yield* listDagoAcpModels({
+    settings,
+    cwd: options.cwd,
+    stateDir: options.stateDir,
+    environment,
+  }).pipe(Effect.timeoutOption(MODEL_PROBE_TIMEOUT_MS), Effect.result);
+  if (Result.isFailure(inventoryResult)) {
+    return buildServerProvider({
+      presentation: DAGO_PRESENTATION,
+      enabled: true,
+      checkedAt,
+      models,
+      probe: {
+        installed: true,
+        version,
+        status: "error",
+        auth: { status: "unknown" },
+        message: "Failed to discover dago models through ACP.",
+      },
+    });
+  }
+  if (Option.isNone(inventoryResult.success)) {
+    return buildServerProvider({
+      presentation: DAGO_PRESENTATION,
+      enabled: true,
+      checkedAt,
+      models,
+      probe: {
+        installed: true,
+        version,
+        status: "error",
+        auth: { status: "unknown" },
+        message: "dago timed out while reporting its ACP model catalog.",
+      },
+    });
+  }
   return buildServerProvider({
     presentation: DAGO_PRESENTATION,
     enabled: true,
     checkedAt,
-    models,
+    models: dagoModelsFromAcp(inventoryResult.success.value, settings.customModels),
     probe: {
       installed: true,
       version,
-      status: output.code === 0 ? "ready" : "error",
+      status: "ready",
       auth: { status: "unknown" },
-      ...(output.code === 0 ? {} : { message: "The dacode CLI failed to run." }),
     },
   });
 });
