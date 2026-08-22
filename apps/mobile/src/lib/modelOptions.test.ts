@@ -31,7 +31,7 @@ describe("mobile model options", () => {
       ],
     } as unknown as ServerConfig;
 
-    expect(groupByProvider(buildModelOptions(config, null))[0]?.providerLabel).toBe("dago");
+    expect(groupByProvider(buildModelOptions(config, null))[0]?.providerLabel).toBe("dacode");
   });
 
   it("groups models by provider and flags legacy entries", () => {

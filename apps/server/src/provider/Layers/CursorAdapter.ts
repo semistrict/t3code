@@ -117,6 +117,7 @@ export interface CursorAdapterLiveOptions {
   readonly resolveSettings?: Effect.Effect<CursorSettings>;
   readonly provider?: ProviderDriverKind;
   readonly runtimeName?: string;
+  readonly resolveModelId?: (model: string | null | undefined) => string;
   readonly includeCursorExtensions?: boolean;
   readonly makeRuntime?: (
     input: CursorAcpRuntimeInput,
@@ -287,6 +288,7 @@ function applyRequestedSessionConfiguration<E>(input: {
         readonly options?: ReadonlyArray<ProviderOptionSelection> | null | undefined;
       }
     | undefined;
+  readonly resolveModelId?: (model: string | null | undefined) => string;
   readonly mapError: (context: {
     readonly cause: import("effect-acp/errors").AcpError;
     readonly method: "session/set_config_option" | "session/set_mode";
@@ -298,6 +300,7 @@ function applyRequestedSessionConfiguration<E>(input: {
         runtime: input.runtime,
         model: input.modelSelection.model,
         selections: input.modelSelection.options,
+        ...(input.resolveModelId ? { resolveModelId: input.resolveModelId } : {}),
         mapError: ({ cause }) =>
           input.mapError({
             cause,
@@ -331,12 +334,12 @@ function selectAutoApprovedPermissionOption(
 ): string | undefined {
   const allowAlwaysOption = request.options.find((option) => option.kind === "allow_always");
   if (typeof allowAlwaysOption?.optionId === "string" && allowAlwaysOption.optionId.trim()) {
-    return allowAlwaysOption.optionId.trim();
+    return allowAlwaysOption.optionId;
   }
 
   const allowOnceOption = request.options.find((option) => option.kind === "allow_once");
   if (typeof allowOnceOption?.optionId === "string" && allowOnceOption.optionId.trim()) {
-    return allowOnceOption.optionId.trim();
+    return allowOnceOption.optionId;
   }
 
   return undefined;
@@ -349,6 +352,7 @@ export function makeCursorAdapter(
   return Effect.gen(function* () {
     const provider = options?.provider ?? DEFAULT_PROVIDER;
     const runtimeName = options?.runtimeName ?? "Cursor";
+    const resolveModelId = options?.resolveModelId ?? resolveCursorAcpBaseModelId;
     const makeRuntime = options?.makeRuntime ?? makeCursorAcpRuntime;
     const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make(provider);
     const fileSystem = yield* FileSystem.FileSystem;
@@ -762,13 +766,17 @@ export function makeCursorAdapter(
                       decision: resolved,
                     }),
                   );
+                  const optionId =
+                    resolved === "cancel"
+                      ? undefined
+                      : acpPermissionOutcome(params.options, resolved);
                   return {
                     outcome:
-                      resolved === "cancel"
+                      optionId === undefined
                         ? ({ outcome: "cancelled" } as const)
                         : {
                             outcome: "selected" as const,
-                            optionId: acpPermissionOutcome(resolved),
+                            optionId,
                           },
                   };
                 }),
@@ -795,6 +803,7 @@ export function makeCursorAdapter(
             runtimeMode: input.runtimeMode,
             interactionMode: undefined,
             modelSelection: cursorModelSelection,
+            resolveModelId,
             mapError: ({ cause, method }) =>
               mapAcpToAdapterError(provider, input.threadId, method, cause),
           });
@@ -979,7 +988,7 @@ export function makeCursorAdapter(
           const turnModelSelection =
             input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
           const model = turnModelSelection?.model ?? ctx.session.model;
-          const resolvedModel = resolveCursorAcpBaseModelId(model);
+          const resolvedModel = resolveModelId(model);
           yield* applyRequestedSessionConfiguration({
             runtime: ctx.acp,
             runtimeMode: ctx.session.runtimeMode,
@@ -991,6 +1000,7 @@ export function makeCursorAdapter(
                     model,
                     options: turnModelSelection?.options,
                   },
+            resolveModelId,
             mapError: ({ cause, method }) =>
               mapAcpToAdapterError(provider, input.threadId, method, cause),
           });

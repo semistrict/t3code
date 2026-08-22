@@ -569,7 +569,12 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         const settledEventsReady = yield* Deferred.make<void>();
 
         const wrapperPath = yield* Effect.promise(() =>
-          makeMockAgentWrapper({ T3_ACP_EMIT_TOOL_CALLS: "1" }),
+          makeMockAgentWrapper({
+            T3_ACP_EMIT_TOOL_CALLS: "1",
+            T3_ACP_ALLOW_ONCE_OPTION_ID: "approve",
+            T3_ACP_ALLOW_ALWAYS_OPTION_ID: "approve-always",
+            T3_ACP_REJECT_ONCE_OPTION_ID: "reject",
+          }),
         );
         yield* serverSettings.updateSettings({
           providers: { cursor: { binaryPath: wrapperPath } },

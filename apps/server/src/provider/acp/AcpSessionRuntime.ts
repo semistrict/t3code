@@ -96,6 +96,17 @@ export interface AcpSessionRuntimeStartResult {
   readonly modelConfigId: string | undefined;
 }
 
+export function selectAcpAuthMethodId(
+  initializeResult: EffectAcpSchema.InitializeResponse,
+  preferredMethodId: string,
+): string | undefined {
+  const advertisedMethodIds = (initializeResult.authMethods ?? []).map((method) => method.id);
+  if (advertisedMethodIds.includes(preferredMethodId)) {
+    return preferredMethodId;
+  }
+  return advertisedMethodIds.length === 1 ? advertisedMethodIds[0] : undefined;
+}
+
 export class AcpSessionRuntime extends Context.Service<
   AcpSessionRuntime,
   {
@@ -541,22 +552,57 @@ export const make = (
         acp.agent.initialize(initializePayload),
       );
 
-      const authenticatePayload = {
-        methodId: options.authMethodId,
-      } satisfies EffectAcpSchema.AuthenticateRequest;
+      if (initializeResult.protocolVersion !== initializePayload.protocolVersion) {
+        return yield* new EffectAcpErrors.AcpTransportError({
+          operation: "call-rpc",
+          method: "initialize",
+          detail: `ACP protocol version mismatch: client requested ${initializePayload.protocolVersion}, agent selected ${initializeResult.protocolVersion}`,
+          cause: initializeResult,
+        });
+      }
 
-      yield* runLoggedRequest(
-        "authenticate",
-        authenticatePayload,
-        acp.agent.authenticate(authenticatePayload),
+      const unsupportedTransport = unsupportedMcpTransport(
+        initializeResult.agentCapabilities,
+        options.mcpServers ?? [],
       );
+      if (unsupportedTransport !== undefined) {
+        return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+          `ACP agent did not advertise ${unsupportedTransport.toUpperCase()} MCP transport support`,
+          { transport: unsupportedTransport },
+        );
+      }
+
+      const advertisedAuthMethodIds = (initializeResult.authMethods ?? []).map(
+        (method) => method.id,
+      );
+      const selectedAuthMethodId = selectAcpAuthMethodId(initializeResult, options.authMethodId);
+      if (advertisedAuthMethodIds.length > 0 && selectedAuthMethodId === undefined) {
+        return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+          `Preferred ACP authentication method "${options.authMethodId}" was not advertised by the agent`,
+          {
+            preferredMethodId: options.authMethodId,
+            advertisedMethodIds: advertisedAuthMethodIds,
+          },
+        );
+      }
+      if (selectedAuthMethodId !== undefined) {
+        const authenticatePayload = {
+          methodId: selectedAuthMethodId,
+        } satisfies EffectAcpSchema.AuthenticateRequest;
+
+        yield* runLoggedRequest(
+          "authenticate",
+          authenticatePayload,
+          acp.agent.authenticate(authenticatePayload),
+        );
+      }
 
       let sessionId: string;
       let sessionSetupResult:
         | EffectAcpSchema.LoadSessionResponse
         | EffectAcpSchema.NewSessionResponse
         | EffectAcpSchema.ResumeSessionResponse;
-      if (options.resumeSessionId) {
+      if (options.resumeSessionId && initializeResult.agentCapabilities?.loadSession === true) {
         const loadPayload = {
           sessionId: options.resumeSessionId,
           cwd: options.cwd,
@@ -720,6 +766,16 @@ export const make = (
         promptSerializationSemaphore.withPermit(
           Effect.gen(function* () {
             const started = yield* getStartedState;
+            const unsupportedContent = unsupportedPromptContent(
+              started.initializeResult.agentCapabilities,
+              payload.prompt,
+            );
+            if (unsupportedContent !== undefined) {
+              return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+                `ACP agent did not advertise ${unsupportedContent} prompt content support`,
+                { contentType: unsupportedContent },
+              );
+            }
             yield* closeActiveAssistantSegment({
               queue: eventQueue,
               assistantSegmentRef,
@@ -777,16 +833,47 @@ export const make = (
             if (modeState?.currentModeId === modeId) {
               return Effect.succeed({} satisfies EffectAcpSchema.SetSessionModeResponse);
             }
-            return setConfigOption("mode", modeId).pipe(
+            return Ref.get(configOptionsRef).pipe(
+              Effect.flatMap((configOptions) => {
+                const modeConfigId = configOptions.find(
+                  (option) => option.category === "mode" && option.id.trim(),
+                )?.id;
+                if (modeConfigId !== undefined) {
+                  return setConfigOption(modeConfigId, modeId).pipe(
+                    Effect.as({} satisfies EffectAcpSchema.SetSessionModeResponse),
+                  );
+                }
+                return getStartedState.pipe(
+                  Effect.flatMap((started) => {
+                    const requestPayload = {
+                      sessionId: started.sessionId,
+                      modeId,
+                    } satisfies EffectAcpSchema.SetSessionModeRequest;
+                    return runLoggedRequest(
+                      "session/set_mode",
+                      requestPayload,
+                      acp.agent.setSessionMode(requestPayload),
+                    );
+                  }),
+                );
+              }),
               Effect.tap(() => updateCurrentModeId(modeId)),
-              Effect.as({} satisfies EffectAcpSchema.SetSessionModeResponse),
             );
           }),
         ),
       setConfigOption,
       setModel: (model) =>
         getStartedState.pipe(
-          Effect.flatMap((started) => setConfigOption(started.modelConfigId ?? "model", model)),
+          Effect.flatMap((started) =>
+            started.modelConfigId === undefined
+              ? Effect.fail(
+                  EffectAcpErrors.AcpRequestError.invalidParams(
+                    "ACP agent did not advertise a model configuration option",
+                    { requestedModelId: model },
+                  ),
+                )
+              : setConfigOption(started.modelConfigId, model),
+          ),
           Effect.asVoid,
         ),
       setSessionModel: (modelId) =>
@@ -825,6 +912,43 @@ function sessionConfigOptionsFromSetup(
     | undefined,
 ): ReadonlyArray<EffectAcpSchema.SessionConfigOption> {
   return response?.configOptions ?? [];
+}
+
+function unsupportedMcpTransport(
+  capabilities: EffectAcpSchema.InitializeResponse["agentCapabilities"],
+  servers: ReadonlyArray<EffectAcpSchema.McpServer>,
+): "http" | "sse" | undefined {
+  for (const server of servers) {
+    if (
+      "type" in server &&
+      server.type === "http" &&
+      capabilities?.mcpCapabilities?.http !== true
+    ) {
+      return "http";
+    }
+    if ("type" in server && server.type === "sse" && capabilities?.mcpCapabilities?.sse !== true) {
+      return "sse";
+    }
+  }
+  return undefined;
+}
+
+function unsupportedPromptContent(
+  capabilities: EffectAcpSchema.InitializeResponse["agentCapabilities"],
+  prompt: ReadonlyArray<EffectAcpSchema.ContentBlock>,
+): "image" | "audio" | "resource" | undefined {
+  for (const block of prompt) {
+    if (block.type === "image" && capabilities?.promptCapabilities?.image !== true) {
+      return "image";
+    }
+    if (block.type === "audio" && capabilities?.promptCapabilities?.audio !== true) {
+      return "audio";
+    }
+    if (block.type === "resource" && capabilities?.promptCapabilities?.embeddedContext !== true) {
+      return "resource";
+    }
+  }
+  return undefined;
 }
 
 function configOptionCurrentValueMatches(

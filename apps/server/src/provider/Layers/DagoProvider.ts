@@ -29,7 +29,7 @@ import {
 import { listDagoAcpModels, type DagoAcpModelList } from "../acp/DagoAcpSupport.ts";
 
 const DAGO_PRESENTATION = {
-  displayName: "dago",
+  displayName: "dacode",
   badgeLabel: "Workflows",
   showInteractionModeToggle: false,
 } as const;
@@ -48,9 +48,9 @@ export function dagoModelsFromAcp(
   const seen = new Set<string>();
   const discovered: ServerProviderModel[] = [];
   for (const candidate of inventory.models) {
-    const slug = candidate.id.trim();
+    const slug = candidate.id;
     const name = candidate.name.trim();
-    if (!slug || !name || seen.has(slug)) {
+    if (!slug.trim() || !name || seen.has(slug)) {
       continue;
     }
     seen.add(slug);
@@ -85,14 +85,14 @@ export function buildInitialDagoProviderSnapshot(
             version: null,
             status: "warning",
             auth: { status: "unknown" },
-            message: "Checking dago availability...",
+            message: "Checking dacode availability...",
           }
         : {
             installed: false,
             version: null,
             status: "warning",
             auth: { status: "unknown" },
-            message: "dago is disabled in settings.",
+            message: "dacode is disabled in settings.",
           },
     });
   });
@@ -186,7 +186,7 @@ export const checkDagoProviderStatus = Effect.fn("checkDagoProviderStatus")(func
         version,
         status: "error",
         auth: { status: "unknown" },
-        message: "Failed to discover dago models through ACP.",
+        message: "Failed to discover dacode models through ACP.",
       },
     });
   }
@@ -201,7 +201,7 @@ export const checkDagoProviderStatus = Effect.fn("checkDagoProviderStatus")(func
         version,
         status: "error",
         auth: { status: "unknown" },
-        message: "dago timed out while reporting its ACP model catalog.",
+        message: "dacode timed out while reporting its ACP model catalog.",
       },
     });
   }
@@ -232,7 +232,7 @@ export const enrichDagoSnapshot = (input: {
     Effect.provideService(HttpClient.HttpClient, input.httpClient),
     Effect.flatMap(input.publishSnapshot),
     Effect.catchCause((cause) =>
-      Effect.logWarning("dago version advisory enrichment failed", {
+      Effect.logWarning("dacode version advisory enrichment failed", {
         errorTag: causeErrorTag(cause),
       }),
     ),

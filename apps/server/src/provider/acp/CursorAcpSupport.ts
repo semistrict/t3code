@@ -84,17 +84,20 @@ export function applyCursorAcpModelSelection<E>(input: {
   readonly runtime: CursorAcpModelSelectionRuntime;
   readonly model: string | null | undefined;
   readonly selections: ReadonlyArray<ProviderOptionSelection> | null | undefined;
+  readonly resolveModelId?: (model: string | null | undefined) => string;
   readonly mapError: (context: CursorAcpModelSelectionErrorContext) => E;
 }): Effect.Effect<void, E> {
   return Effect.gen(function* () {
-    yield* input.runtime.setModel(resolveCursorAcpBaseModelId(input.model)).pipe(
-      Effect.mapError((cause) =>
-        input.mapError({
-          cause,
-          step: "set-model",
-        }),
-      ),
-    );
+    yield* input.runtime
+      .setModel((input.resolveModelId ?? resolveCursorAcpBaseModelId)(input.model))
+      .pipe(
+        Effect.mapError((cause) =>
+          input.mapError({
+            cause,
+            step: "set-model",
+          }),
+        ),
+      );
 
     const configUpdates = resolveCursorAcpConfigUpdates(
       yield* input.runtime.getConfigOptions,

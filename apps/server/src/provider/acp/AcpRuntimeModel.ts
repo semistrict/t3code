@@ -125,7 +125,7 @@ export function extractModelConfigId(sessionResponse: AcpSessionSetupResponse): 
   if (!configOptions) return undefined;
   for (const opt of configOptions) {
     if (opt.category === "model" && opt.id.trim().length > 0) {
-      return opt.id.trim();
+      return opt.id;
     }
   }
   return undefined;
@@ -138,11 +138,10 @@ export function findSessionConfigOption(
   if (!configOptions) {
     return undefined;
   }
-  const normalizedConfigId = configId.trim();
-  if (!normalizedConfigId) {
+  if (!configId.trim()) {
     return undefined;
   }
-  return configOptions.find((option) => option.id.trim() === normalizedConfigId);
+  return configOptions.find((option) => option.id === configId);
 }
 
 export function collectSessionConfigOptionValues(
@@ -161,15 +160,15 @@ export function parseSessionModeState(
 ): AcpSessionModeState | undefined {
   const modes = sessionResponse.modes;
   if (!modes) return undefined;
-  const currentModeId = modes.currentModeId.trim();
-  if (!currentModeId) {
+  const currentModeId = modes.currentModeId;
+  if (!currentModeId.trim()) {
     return undefined;
   }
   const availableModes: Array<AcpSessionMode> = [];
   for (const mode of modes.availableModes) {
-    const id = mode.id.trim();
+    const id = mode.id;
     const name = mode.name.trim();
-    if (!id || !name) {
+    if (!id.trim() || !name) {
       continue;
     }
     const description = mode.description?.trim() || undefined;
@@ -515,8 +514,8 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
 
   switch (upd.sessionUpdate) {
     case "current_mode_update": {
-      modeId = upd.currentModeId.trim();
-      if (modeId) {
+      modeId = upd.currentModeId;
+      if (modeId.trim()) {
         events.push({
           _tag: "ModeChanged",
           modeId,

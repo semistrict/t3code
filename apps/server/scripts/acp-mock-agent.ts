@@ -46,6 +46,10 @@ const permissionOptionIds = {
   allowAlways: process.env.T3_ACP_ALLOW_ALWAYS_OPTION_ID ?? "allow-always",
   rejectOnce: process.env.T3_ACP_REJECT_ONCE_OPTION_ID ?? "reject-once",
 };
+const advertisedAuthMethodId = process.env.T3_ACP_ADVERTISED_AUTH_METHOD_ID ?? "test";
+const protocolVersion = Number(process.env.T3_ACP_PROTOCOL_VERSION ?? "1");
+const loadSessionCapability = process.env.T3_ACP_LOAD_SESSION_CAPABILITY !== "0";
+const omitModelConfig = process.env.T3_ACP_OMIT_MODEL_CONFIG === "1";
 const sessionId = "mock-session-1";
 
 let currentModeId = "ask";
@@ -208,21 +212,23 @@ function configOptions(): ReadonlyArray<AcpSchema.SessionConfigOption> {
     }
   }
 
-  return [
-    {
-      id: "model",
-      name: "Model",
-      category: "model",
-      type: "select" as const,
-      currentValue: currentModelId,
-      options: [
-        { value: "default", name: "Auto" },
-        { value: "composer-2", name: "Composer 2" },
-        { value: "composer-2[fast=true]", name: "Composer 2 Fast" },
-        { value: "gpt-5.3-codex[reasoning=medium,fast=false]", name: "Codex 5.3" },
-      ],
-    },
-  ];
+  return omitModelConfig
+    ? []
+    : [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select" as const,
+          currentValue: currentModelId,
+          options: [
+            { value: "default", name: "Auto" },
+            { value: "composer-2", name: "Composer 2" },
+            { value: "composer-2[fast=true]", name: "Composer 2 Fast" },
+            { value: "gpt-5.3-codex[reasoning=medium,fast=false]", name: "Codex 5.3" },
+          ],
+        },
+      ];
 }
 
 function modelConfigOptionsFor(modelId: string): ReadonlyArray<AcpSchema.SessionConfigOption> {
@@ -302,13 +308,22 @@ const program = Effect.gen(function* () {
       parameterizedModelPicker =
         request.clientCapabilities?._meta?.parameterizedModelPicker === true;
       return {
-        protocolVersion: 1,
-        agentCapabilities: { loadSession: true },
+        protocolVersion,
+        agentCapabilities: { loadSession: loadSessionCapability },
+        authMethods: [{ id: advertisedAuthMethodId, name: "Mock authentication" }],
       };
     }),
   );
 
-  yield* agent.handleAuthenticate(() => Effect.succeed({}));
+  yield* agent.handleAuthenticate((request) =>
+    request.methodId === advertisedAuthMethodId
+      ? Effect.succeed({})
+      : Effect.fail(
+          AcpError.AcpRequestError.invalidParams(
+            `Unknown authentication method ${request.methodId}`,
+          ),
+        ),
+  );
 
   yield* agent.handleExtRequest(
     "_dago/models/list",
@@ -407,6 +422,22 @@ const program = Effect.gen(function* () {
         );
       }
       currentModelId = request.modelId;
+      return {};
+    }),
+  );
+
+  yield* agent.handleSetSessionMode((request) =>
+    Effect.gen(function* () {
+      if (!availableModes.some((mode) => mode.id === request.modeId)) {
+        return yield* AcpError.AcpRequestError.invalidParams(
+          `Unknown mock mode id: ${request.modeId}`,
+          {
+            method: "session/set_mode",
+            params: request,
+          },
+        );
+      }
+      currentModeId = request.modeId;
       return {};
     }),
   );
@@ -702,6 +733,14 @@ const program = Effect.gen(function* () {
         const cancelled =
           cancelledSessions.delete(requestedSessionId) ||
           permission.outcome.outcome === "cancelled";
+        if (
+          permission.outcome.outcome === "selected" &&
+          !Object.values(permissionOptionIds).includes(permission.outcome.optionId)
+        ) {
+          return yield* AcpError.AcpRequestError.internalError(
+            `Unknown permission option ${permission.outcome.optionId}`,
+          );
+        }
 
         yield* agent.client.sessionUpdate({
           sessionId: requestedSessionId,
@@ -924,7 +963,7 @@ const program = Effect.gen(function* () {
         : sessionId;
 
     if (typeof nextModeId === "string" && nextModeId.trim()) {
-      currentModeId = nextModeId.trim();
+      currentModeId = nextModeId;
       return agent.client
         .sessionUpdate({
           sessionId: requestedSessionId,

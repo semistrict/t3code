@@ -88,7 +88,8 @@ export function currentGrokModelIdFromSessionSetup(
     | EffectAcpSchema.NewSessionResponse
     | EffectAcpSchema.ResumeSessionResponse,
 ): string | undefined {
-  return sessionSetupResult.models?.currentModelId?.trim() || undefined;
+  const modelId = sessionSetupResult.models?.currentModelId;
+  return modelId?.trim() ? modelId : undefined;
 }
 
 export function applyGrokAcpModelSelection<E>(input: {

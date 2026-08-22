@@ -363,7 +363,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
         },
         [dagoId]: {
           driver: dagoDriverKind,
-          displayName: "dago",
+          displayName: "dacode",
           enabled: false,
           config: makeDagoConfig({}),
         },
@@ -415,7 +415,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       expect(codex?.displayName).toBe("Codex");
       expect(claude?.displayName).toBe("Claude");
       expect(cursor?.displayName).toBe("Cursor");
-      expect(dago?.displayName).toBe("dago");
+      expect(dago?.displayName).toBe("dacode");
       expect(grok?.displayName).toBe("Grok");
       expect(openCode?.displayName).toBe("OpenCode");
 

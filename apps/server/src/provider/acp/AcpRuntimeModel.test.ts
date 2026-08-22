@@ -27,10 +27,10 @@ describe("AcpRuntimeModel", () => {
     } satisfies EffectAcpSchema.NewSessionResponse);
 
     expect(modeState).toEqual({
-      currentModeId: "code",
+      currentModeId: " code ",
       availableModes: [
-        { id: "ask", name: "Ask", description: "Request approval" },
-        { id: "code", name: "Code" },
+        { id: " ask ", name: "Ask", description: "Request approval" },
+        { id: " code ", name: "Code" },
       ],
     });
   });
@@ -48,7 +48,7 @@ describe("AcpRuntimeModel", () => {
           options: [{ value: "ask", name: "Ask" }],
         },
         {
-          id: "model",
+          id: " model-option ",
           name: "Model",
           category: "model",
           type: "select",
@@ -58,7 +58,7 @@ describe("AcpRuntimeModel", () => {
       ],
     } satisfies EffectAcpSchema.NewSessionResponse);
 
-    expect(modelConfigId).toBe("model");
+    expect(modelConfigId).toBe(" model-option ");
   });
 
   it("detects Grok session replay updates from _meta.isReplay", () => {
@@ -255,7 +255,7 @@ describe("AcpRuntimeModel", () => {
     }
   });
 
-  it("trims padded current mode updates before emitting a mode change", () => {
+  it("preserves opaque current mode ids when emitting a mode change", () => {
     const result = parseSessionUpdateEvent({
       sessionId: "session-1",
       update: {
@@ -264,11 +264,11 @@ describe("AcpRuntimeModel", () => {
       },
     } satisfies EffectAcpSchema.SessionNotification);
 
-    expect(result.modeId).toBe("code");
+    expect(result.modeId).toBe(" code ");
     expect(result.events).toEqual([
       {
         _tag: "ModeChanged",
-        modeId: "code",
+        modeId: " code ",
       },
     ]);
   });

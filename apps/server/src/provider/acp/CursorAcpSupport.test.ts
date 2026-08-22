@@ -77,6 +77,25 @@ describe("buildCursorAcpSpawnInput", () => {
 });
 
 describe("applyCursorAcpModelSelection", () => {
+  it("lets provider adapters preserve opaque model ids", async () => {
+    const models: string[] = [];
+    await Effect.runPromise(
+      applyCursorAcpModelSelection({
+        runtime: {
+          getConfigOptions: Effect.succeed([]),
+          setModel: (value: string) => Effect.sync(() => models.push(value)),
+          setConfigOption: () => Effect.void,
+        },
+        model: "provider:model[variant=exact]",
+        selections: [],
+        resolveModelId: (model) => model ?? "",
+        mapError: ({ cause }) => cause.message,
+      }),
+    );
+
+    expect(models).toEqual(["provider:model[variant=exact]"]);
+  });
+
   it("sets the base model before applying separate config options", async () => {
     const calls: Array<
       | { readonly type: "model"; readonly value: string }

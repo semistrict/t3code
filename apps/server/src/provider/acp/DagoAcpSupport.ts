@@ -94,7 +94,7 @@ export const listDagoAcpModels = Effect.fn("listDagoAcpModels")(function* (input
         Effect.provideService(Scope.Scope, scope),
       );
       const acp = yield* Effect.service(EffectAcpClient.AcpClient).pipe(Effect.provide(acpContext));
-      yield* acp.agent.initialize({
+      const initializeResult = yield* acp.agent.initialize({
         protocolVersion: 1,
         clientCapabilities: {
           fs: { readTextFile: false, writeTextFile: false },
@@ -102,13 +102,39 @@ export const listDagoAcpModels = Effect.fn("listDagoAcpModels")(function* (input
         },
         clientInfo: { name: "t3-provider-probe", version: "0.0.0" },
       });
-      yield* acp.agent.authenticate({ methodId: "cursor_login" });
+      if (initializeResult.protocolVersion !== 1) {
+        return yield* new EffectAcpErrors.AcpTransportError({
+          operation: "call-rpc",
+          method: "initialize",
+          detail: `ACP protocol version mismatch: client requested 1, agent selected ${initializeResult.protocolVersion}`,
+          cause: initializeResult,
+        });
+      }
+      const advertisedAuthMethodIds = (initializeResult.authMethods ?? []).map(
+        (method) => method.id,
+      );
+      const authMethodId = AcpSessionRuntime.selectAcpAuthMethodId(
+        initializeResult,
+        "cursor_login",
+      );
+      if (advertisedAuthMethodIds.length > 0 && authMethodId === undefined) {
+        return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+          'Preferred ACP authentication method "cursor_login" was not advertised by the agent',
+          {
+            preferredMethodId: "cursor_login",
+            advertisedMethodIds: advertisedAuthMethodIds,
+          },
+        );
+      }
+      if (authMethodId !== undefined) {
+        yield* acp.agent.authenticate({ methodId: authMethodId });
+      }
       const response = yield* acp.raw.request(DAGO_MODEL_LIST_METHOD, { version: 1 });
       return yield* decodeDagoAcpModelList(response).pipe(
         Effect.mapError(
           (cause) =>
             new EffectAcpErrors.AcpTransportError({
-              detail: "dago returned an invalid ACP model list.",
+              detail: "dacode returned an invalid ACP model list.",
               cause,
             }),
         ),
