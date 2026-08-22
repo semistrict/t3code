@@ -10,6 +10,30 @@ import {
 } from "./modelOptions";
 
 describe("mobile model options", () => {
+  it("labels the Dago provider in model controls", () => {
+    const config = {
+      providers: [
+        {
+          instanceId: "dago",
+          driver: "dago",
+          enabled: true,
+          installed: true,
+          auth: { status: "unknown" },
+          models: [
+            {
+              slug: "gpt-5.6-terra",
+              name: "GPT-5.6 Terra",
+              isCustom: false,
+              capabilities: null,
+            },
+          ],
+        },
+      ],
+    } as unknown as ServerConfig;
+
+    expect(groupByProvider(buildModelOptions(config, null))[0]?.providerLabel).toBe("Dago");
+  });
+
   it("groups models by provider and flags legacy entries", () => {
     const config = {
       providers: [

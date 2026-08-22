@@ -59,6 +59,23 @@ export function ProviderIcon(props: ProviderIconProps) {
     );
   }
 
+  if (props.provider === "dago") {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <Path
+          d="M7 5.5h4.5a2 2 0 0 1 2 2v1.25M7 18.5h4.5a2 2 0 0 0 2-2v-1.25M13.5 12h3.5"
+          stroke={mono}
+          strokeWidth={1.8}
+          strokeLinecap="round"
+        />
+        <Path
+          fill={mono}
+          d="M3.25 3.25h5.5v4.5h-5.5v-4.5Zm0 13h5.5v4.5h-5.5v-4.5Zm13-7h4.5v5.5h-4.5v-5.5Z"
+        />
+      </Svg>
+    );
+  }
+
   // codex (and unknown drivers)
   return (
     <Svg width={size} height={size} viewBox="0 0 256 260" fill="none">

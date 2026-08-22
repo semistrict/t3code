@@ -72,4 +72,23 @@ describe("readWorkflowScript containment", () => {
       }
     }),
   );
+
+  effectIt.effect("serves a Dago workflow script under the server-owned state root", () =>
+    Effect.gen(function* () {
+      const stateDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "dago-script-state-"));
+      try {
+        const dagoRoot = NodePath.join(stateDir, "providers", "dago", "work", "workflows");
+        NodeFS.mkdirSync(dagoRoot, { recursive: true });
+        const dagoScript = NodePath.join(dagoRoot, "audit.js");
+        NodeFS.writeFileSync(dagoScript, "export const meta = { name: 'audit' };\n");
+        const result = yield* readWorkflowScript({
+          scriptPath: dagoScript,
+          dagoStateDir: stateDir,
+        });
+        assert.include(result.contents, "name: 'audit'");
+      } finally {
+        NodeFS.rmSync(stateDir, { recursive: true, force: true });
+      }
+    }),
+  );
 });

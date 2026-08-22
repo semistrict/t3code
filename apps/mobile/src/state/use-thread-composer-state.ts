@@ -11,6 +11,10 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import {
+  deriveAgentPanelModel,
+  foldSubagentActivities,
+} from "@t3tools/client-runtime/state/subagentRuntime";
 import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
 
 import { makeQueuedMessageMetadata } from "../lib/commandMetadata";
@@ -94,6 +98,17 @@ export function useThreadComposerState() {
     () => (selectedThreadDetail ? buildThreadFeed(selectedThreadDetail) : []),
     [selectedThreadDetail],
   );
+  const selectedThreadAgentPanelModel = useMemo(() => {
+    if (!selectedThreadDetail) {
+      return deriveAgentPanelModel({ agents: [] });
+    }
+    const sessionStatus = selectedThreadDetail.session?.status ?? "stopped";
+    const sessionLive =
+      sessionStatus !== "stopped" && sessionStatus !== "error" && sessionStatus !== "interrupted";
+    return deriveAgentPanelModel({
+      agents: foldSubagentActivities(selectedThreadDetail.activities, { sessionLive }),
+    });
+  }, [selectedThreadDetail]);
 
   const selectedDraft = selectedThreadKey ? composerDrafts[selectedThreadKey] : null;
   const draftMessage = selectedDraft?.text ?? "";
@@ -297,6 +312,7 @@ export function useThreadComposerState() {
 
   return {
     selectedThreadFeed,
+    selectedThreadAgentPanelModel,
     selectedThreadQueueCount,
     activeWorkStartedAt,
     draftMessage,

@@ -282,11 +282,9 @@ function isTerminalBypassUpdate(activity: OrchestrationThreadActivity): boolean 
 
 /**
  * Quiet-timeline guarantee (mirrors web's session-logic): agent-internal
- * activity lives in the Agents sheet, not the work log. Terminal rows are
- * kept — with no Agents surface on mobile they are the terminal signal
- * (a surface that hides rows must keep its own terminal signal). That means
- * task.completed (Claude) AND terminal bypassed task.updated (Codex, whose
- * children never emit task.completed — review finding).
+ * activity lives in the Agent work panel, not the work log. The panel folds
+ * both direct agents and workflow members, including their terminal state,
+ * so terminal rows stay quiet too instead of rendering the same result twice.
  */
 function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean {
   const payload =
@@ -296,20 +294,13 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
   if (!payload) {
     return false;
   }
-  const isTerminalTaskRow = activity.kind === "task.completed" || isTerminalBypassUpdate(activity);
-  if (payload.timelineBypass === true && !isTerminalTaskRow) {
+  if (payload.agentKind === "agent" || payload.timelineBypass === true) {
     return true;
   }
-  // agentId marks ownership, not "hide me": a NESTED AGENT's terminal row is
-  // the only signal mobile gets (no Agents sheet), so it stays. Only an
-  // agent's own background work (stamped "background") is internal — same
-  // rule as web (review finding: hiding on agentId alone dropped nested
-  // completions with no replacement UI).
+  // Background work owned by an agent belongs to that agent's activity trail,
+  // not the parent thread's work log.
   const ownedByAgent = typeof payload.agentId === "string" && payload.agentId.trim().length > 0;
-  if (!ownedByAgent) {
-    return false;
-  }
-  return !(isTerminalTaskRow && payload.agentKind === "agent");
+  return ownedByAgent;
 }
 
 function deriveWorkLogEntries(

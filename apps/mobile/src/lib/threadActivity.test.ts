@@ -629,7 +629,7 @@ describe("buildThreadFeed", () => {
 });
 
 describe("quiet timeline: nested agents", () => {
-  it("keeps a nested agent's terminal row but hides its background work", () => {
+  it("keeps nested agent lifecycle rows in the Agent work panel", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-nested"),
       projectId: ProjectId.make("project-1"),
@@ -643,8 +643,7 @@ describe("quiet timeline: nested agents", () => {
           createdAt: "2026-04-01T00:00:02.000Z",
           payload: { taskId: "sh-1", agentId: "owner", agentKind: "background" },
         }),
-        // A nested AGENT's completion: mobile has no Agents sheet, so this
-        // terminal row is the only signal it ever finished.
+        // A nested agent's completion is represented in the Agent work panel.
         makeActivity({
           id: EventId.make("nested-done"),
           kind: "task.completed",
@@ -659,7 +658,7 @@ describe("quiet timeline: nested agents", () => {
     const ids = feed.flatMap((entry) =>
       entry.type === "activity-group" ? entry.activities.map((row) => row.id) : [],
     );
-    expect(ids).toContain("nested-done");
+    expect(ids).not.toContain("nested-done");
     expect(ids).not.toContain("shell-done");
   });
 });
