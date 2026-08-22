@@ -17,7 +17,7 @@ describe("buildInitialDagoProviderSnapshot", () => {
       const snapshot = yield* buildInitialDagoProviderSnapshot(settings());
 
       expect(snapshot).toMatchObject({
-        displayName: "Dago",
+        displayName: "dago",
         badgeLabel: "Workflows",
         enabled: false,
         installed: false,

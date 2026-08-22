@@ -72,7 +72,7 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
   },
   {
     value: ProviderDriverKind.make("dago"),
-    label: "Dago",
+    label: "dago",
     icon: ACPRegistryIcon,
     badgeLabel: "Workflows",
     settingsSchema: DagoSettings,

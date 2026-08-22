@@ -54,7 +54,7 @@ export const PROVIDER_OPTIONS: Array<{
   },
   {
     value: ProviderDriverKind.make("dago"),
-    label: "Dago",
+    label: "dago",
     available: true,
     pickerSidebarBadge: "new",
   },

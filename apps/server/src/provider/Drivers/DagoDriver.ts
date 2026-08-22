@@ -79,7 +79,7 @@ const withInstanceIdentity =
 
 export const DagoDriver: ProviderDriver<DagoSettings, DagoDriverEnv> = {
   driverKind: DRIVER_KIND,
-  metadata: { displayName: "Dago", supportsMultipleInstances: true },
+  metadata: { displayName: "dago", supportsMultipleInstances: true },
   configSchema: DagoSettings,
   defaultConfig: (): DagoSettings => decodeDagoSettings({}),
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
@@ -120,7 +120,7 @@ export const DagoDriver: ProviderDriver<DagoSettings, DagoDriverEnv> = {
         customModels: effectiveConfig.customModels,
       } satisfies CursorSettings;
       const textGeneration = yield* makeCursorTextGeneration(compatibilitySettings, processEnv, {
-        runtimeName: "Dago",
+        runtimeName: "dago",
         makeRuntime: (input) =>
           makeDagoAcpRuntime({
             ...input,
@@ -156,7 +156,7 @@ export const DagoDriver: ProviderDriver<DagoSettings, DagoDriverEnv> = {
             new ProviderDriverError({
               driver: DRIVER_KIND,
               instanceId,
-              detail: `Failed to build Dago snapshot: ${cause.message ?? String(cause)}`,
+              detail: `Failed to build dago snapshot: ${cause.message ?? String(cause)}`,
               cause,
             }),
         ),

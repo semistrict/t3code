@@ -73,7 +73,7 @@ describe("readWorkflowScript containment", () => {
     }),
   );
 
-  effectIt.effect("serves a Dago workflow script under the server-owned state root", () =>
+  effectIt.effect("serves a dago workflow script under the server-owned state root", () =>
     Effect.gen(function* () {
       const stateDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "dago-script-state-"));
       try {

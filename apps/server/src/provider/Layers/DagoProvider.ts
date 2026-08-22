@@ -28,7 +28,7 @@ import {
 } from "../providerMaintenance.ts";
 
 const DAGO_PRESENTATION = {
-  displayName: "Dago",
+  displayName: "dago",
   badgeLabel: "Workflows",
   showInteractionModeToggle: false,
 } as const;
@@ -67,14 +67,14 @@ export function buildInitialDagoProviderSnapshot(
             version: null,
             status: "warning",
             auth: { status: "unknown" },
-            message: "Checking Dago availability...",
+            message: "Checking dago availability...",
           }
         : {
             installed: false,
             version: null,
             status: "warning",
             auth: { status: "unknown" },
-            message: "Dago is disabled in settings.",
+            message: "dago is disabled in settings.",
           },
     });
   });
@@ -163,7 +163,7 @@ export const enrichDagoSnapshot = (input: {
     Effect.provideService(HttpClient.HttpClient, input.httpClient),
     Effect.flatMap(input.publishSnapshot),
     Effect.catchCause((cause) =>
-      Effect.logWarning("Dago version advisory enrichment failed", {
+      Effect.logWarning("dago version advisory enrichment failed", {
         errorTag: causeErrorTag(cause),
       }),
     ),

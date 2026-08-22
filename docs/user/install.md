@@ -59,17 +59,17 @@ to use, then authenticate it.
 | Codex      | [Codex CLI](https://developers.openai.com/codex/cli)  | `codex`        | `codex login`         |
 | Claude     | [Claude Code](https://claude.com/product/claude-code) | `claude`       | `claude auth login`   |
 | Cursor     | [Cursor CLI](https://cursor.com/cli)                  | `cursor-agent` | `agent login`         |
-| Dago       | [Dago](https://github.com/semistrict/dago)            | `dacode`       | First `dacode` run    |
+| dago       | [dago](https://github.com/semistrict/dago)            | `dacode`       | First `dacode` run    |
 | Grok Build | [Grok Build CLI](https://x.ai/cli)                    | `grok`         | `grok login`          |
 | OpenCode   | [OpenCode](https://opencode.ai)                       | `opencode`     | `opencode auth login` |
 
-Codex, Claude, Cursor, and Dago are on by default. Grok Build and OpenCode are off by default;
+Codex, Claude, Cursor, and dago are on by default. Grok Build and OpenCode are off by default;
 turn them on in **Settings** → the provider's card when you want to use them. An enabled provider
 still appears in the thread picker only after its CLI is available to the T3 Code server.
 
-Dago sessions include background workflow observability. Workflow phases, workers, usage, persisted
+dago sessions include background workflow observability. Workflow phases, workers, usage, persisted
 scripts, completion, failure, and cancellation appear in the same Agents surface as other provider
-tasks. The server stores each Dago provider instance under its own state directory.
+tasks. The server stores each dago provider instance under its own state directory.
 
 Cursor is the one to watch: install Cursor CLI, which provides the `cursor-agent` binary that
 T3 Code looks for, but authenticate with `agent login`, not `cursor-agent login`.

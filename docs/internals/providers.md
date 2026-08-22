@@ -40,7 +40,7 @@ directory to route session and turn operations for a thread, so callers name a t
 Adding a driver means writing the driver plus adapter and adding it to `BUILT_IN_DRIVERS`. No
 orchestration, contract, or client change is required for the common case.
 
-Dago uses ACP for the ordinary session lifecycle and a versioned `_dago/workflow/*` extension for
+dago uses ACP for the ordinary session lifecycle and a versioned `_dago/workflow/*` extension for
 workflow snapshots, resynchronization, and cancellation. The adapter projects those snapshots into
 the existing `task.*` runtime events, so the web, desktop, and mobile Agent work surfaces remain
 source-neutral.

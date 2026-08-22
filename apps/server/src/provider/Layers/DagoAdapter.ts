@@ -47,7 +47,7 @@ export function cancelRunningDagoWorkflows(runtime: DagoWorkflowRequester, sessi
       Effect.mapError(
         (cause) =>
           new EffectAcpErrors.AcpTransportError({
-            detail: "Dago returned an invalid workflow list.",
+            detail: "dago returned an invalid workflow list.",
             cause,
           }),
       ),
@@ -75,7 +75,7 @@ export function makeDagoAdapter(settings: DagoSettings, options: DagoAdapterLive
 
   return makeCursorAdapter(compatibilitySettings, {
     provider: PROVIDER,
-    runtimeName: "Dago",
+    runtimeName: "dago",
     includeCursorExtensions: false,
     instanceId: options.instanceId,
     ...(options.environment ? { environment: options.environment } : {}),
@@ -120,7 +120,7 @@ export function makeDagoAdapter(settings: DagoSettings, options: DagoAdapterLive
               Effect.mapError(
                 (cause) =>
                   new EffectAcpErrors.AcpTransportError({
-                    detail: "Failed to stamp a Dago workflow event.",
+                    detail: "Failed to stamp a dago workflow event.",
                     cause,
                   }),
               ),

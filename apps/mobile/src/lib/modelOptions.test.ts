@@ -10,7 +10,7 @@ import {
 } from "./modelOptions";
 
 describe("mobile model options", () => {
-  it("labels the Dago provider in model controls", () => {
+  it("labels the dago provider in model controls", () => {
     const config = {
       providers: [
         {
@@ -31,7 +31,7 @@ describe("mobile model options", () => {
       ],
     } as unknown as ServerConfig;
 
-    expect(groupByProvider(buildModelOptions(config, null))[0]?.providerLabel).toBe("Dago");
+    expect(groupByProvider(buildModelOptions(config, null))[0]?.providerLabel).toBe("dago");
   });
 
   it("groups models by provider and flags legacy entries", () => {
