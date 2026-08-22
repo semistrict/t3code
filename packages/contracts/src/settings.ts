@@ -444,7 +444,7 @@ export type CursorSettings = typeof CursorSettings.Type;
 export const DagoSettings = makeProviderSettingsSchema(
   {
     enabled: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
     binaryPath: makeBinaryPathSetting("dacode").pipe(

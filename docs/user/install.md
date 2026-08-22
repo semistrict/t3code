@@ -63,9 +63,9 @@ to use, then authenticate it.
 | Grok Build | [Grok Build CLI](https://x.ai/cli)                    | `grok`         | `grok login`          |
 | OpenCode   | [OpenCode](https://opencode.ai)                       | `opencode`     | `opencode auth login` |
 
-Codex and Claude are on by default. Cursor, Grok Build, and OpenCode are off by default; turn
-them on in **Settings** → the provider's card when you want to use them. Dago is also off by
-default.
+Codex, Claude, Cursor, and Dago are on by default. Grok Build and OpenCode are off by default;
+turn them on in **Settings** → the provider's card when you want to use them. An enabled provider
+still appears in the thread picker only after its CLI is available to the T3 Code server.
 
 Dago sessions include background workflow observability. Workflow phases, workers, usage, persisted
 scripts, completion, failure, and cancellation appear in the same Agents surface as other provider
