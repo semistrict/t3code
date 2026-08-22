@@ -109,12 +109,33 @@ const foldProviderInstanceEnabledFlags = (settings: ServerSettings): ServerSetti
   };
 };
 
+const enforceDacodeOnlyProviders = (settings: ServerSettings): ServerSettings => ({
+  ...settings,
+  providers: {
+    ...settings.providers,
+    codex: { ...settings.providers.codex, enabled: false },
+    claudeAgent: { ...settings.providers.claudeAgent, enabled: false },
+    cursor: { ...settings.providers.cursor, enabled: false },
+    grok: { ...settings.providers.grok, enabled: false },
+    opencode: { ...settings.providers.opencode, enabled: false },
+  },
+  providerInstances: Object.fromEntries(
+    Object.entries(settings.providerInstances).map(([instanceId, instance]) => [
+      instanceId,
+      instance.driver === ProviderDriverKind.make("dago")
+        ? instance
+        : { ...instance, enabled: false },
+    ]),
+  ) as ServerSettings["providerInstances"],
+});
+
 const normalizeServerSettings = (
   settings: ServerSettings,
 ): Effect.Effect<ServerSettings, ServerSettingsError> =>
   encodeServerSettings(settings).pipe(
     Effect.flatMap(decodeServerSettings),
     Effect.map(foldProviderInstanceEnabledFlags),
+    Effect.map(enforceDacodeOnlyProviders),
     Effect.mapError(
       (cause) =>
         new ServerSettingsError({
@@ -352,7 +373,7 @@ const make = Effect.gen(function* () {
       });
       return DEFAULT_SERVER_SETTINGS;
     }
-    return foldProviderInstanceEnabledFlags(decoded.value);
+    return enforceDacodeOnlyProviders(foldProviderInstanceEnabledFlags(decoded.value));
   });
 
   const settingsCache = yield* Cache.make<typeof cacheKey, ServerSettings, ServerSettingsError>({

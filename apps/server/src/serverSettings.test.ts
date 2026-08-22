@@ -152,10 +152,10 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           },
         },
         textGenerationModelSelection: {
-          instanceId: ProviderInstanceId.make("codex"),
+          instanceId: ProviderInstanceId.make("dago"),
           model: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model,
           options: createModelSelection(
-            ProviderInstanceId.make("codex"),
+            ProviderInstanceId.make("dago"),
             DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model,
             [
               { id: "reasoningEffort", value: "high" },
@@ -177,7 +177,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       });
 
       assert.deepEqual(next.providers.codex, {
-        enabled: true,
+        enabled: false,
         binaryPath: "/opt/homebrew/bin/codex",
         homePath: "/Users/julius/.codex",
         shadowHomePath: "",
@@ -185,7 +185,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         customModels: [],
       });
       assert.deepEqual(next.providers.claudeAgent, {
-        enabled: true,
+        enabled: false,
         binaryPath: "/usr/local/bin/claude",
         homePath: "",
         customModels: ["claude-custom"],
@@ -194,7 +194,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.deepEqual(
         next.textGenerationModelSelection,
         createModelSelection(
-          ProviderInstanceId.make("codex"),
+          ProviderInstanceId.make("dago"),
           DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model,
           [
             { id: "reasoningEffort", value: "high" },
@@ -228,7 +228,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     ).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
-  it.effect("preserves model when switching providers via textGenerationModelSelection", () =>
+  it.effect("falls back to dacode when selecting a disabled provider", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
 
@@ -257,16 +257,14 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         },
       });
 
-      assert.deepEqual(
-        next.textGenerationModelSelection,
-        createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4", [
-          { id: "reasoningEffort", value: "high" },
-        ]),
-      );
+      assert.deepEqual(next.textGenerationModelSelection, {
+        instanceId: ProviderInstanceId.make("dago"),
+        model: "gpt-5.6-luna",
+      });
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
-  it.effect("preserves custom provider instance text generation selections", () =>
+  it.effect("disables custom instances backed by a non-dacode driver", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
 
@@ -284,47 +282,50 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         },
       });
 
+      assert.equal(
+        next.providerInstances[ProviderInstanceId.make("claude_openrouter")]?.enabled,
+        false,
+      );
       assert.deepEqual(next.textGenerationModelSelection, {
-        instanceId: ProviderInstanceId.make("claude_openrouter"),
-        model: "openai/gpt-5.5",
+        instanceId: ProviderInstanceId.make("dago"),
+        model: "gpt-5.6-luna",
       });
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
-  it.effect(
-    "uses explicit provider instance enabled state over legacy provider enabled state",
-    () =>
-      Effect.gen(function* () {
-        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-        const instanceId = ProviderInstanceId.make("claude_openrouter");
+  it.effect("keeps explicit non-dacode provider instances disabled", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const instanceId = ProviderInstanceId.make("claude_openrouter");
 
-        const next = yield* serverSettings.updateSettings({
-          providers: {
-            claudeAgent: {
-              enabled: false,
-            },
+      const next = yield* serverSettings.updateSettings({
+        providers: {
+          claudeAgent: {
+            enabled: false,
           },
-          providerInstances: {
-            [instanceId]: {
-              driver: ProviderDriverKind.make("claudeAgent"),
-              enabled: true,
-              config: { customModels: ["openai/gpt-5.5"] },
-            },
+        },
+        providerInstances: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("claudeAgent"),
+            enabled: true,
+            config: { customModels: ["openai/gpt-5.5"] },
           },
-          textGenerationModelSelection: {
-            instanceId,
-            model: "openai/gpt-5.5",
-          },
-        });
-
-        assert.deepEqual(next.textGenerationModelSelection, {
+        },
+        textGenerationModelSelection: {
           instanceId,
           model: "openai/gpt-5.5",
-        });
-      }).pipe(Effect.provide(makeServerSettingsLayer())),
+        },
+      });
+
+      assert.equal(next.providerInstances[instanceId]?.enabled, false);
+      assert.deepEqual(next.textGenerationModelSelection, {
+        instanceId: ProviderInstanceId.make("dago"),
+        model: "gpt-5.6-luna",
+      });
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
-  it.effect("preserves enabled text generation selections for non-built-in drivers", () =>
+  it.effect("disables non-built-in provider instances", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       const instanceId = ProviderInstanceId.make("openrouter_text");
@@ -343,9 +344,10 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         },
       });
 
+      assert.equal(next.providerInstances[instanceId]?.enabled, false);
       assert.deepEqual(next.textGenerationModelSelection, {
-        instanceId,
-        model: "openai/gpt-5.5",
+        instanceId: ProviderInstanceId.make("dago"),
+        model: "gpt-5.6-luna",
       });
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
@@ -412,7 +414,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         });
         assert.deepEqual(
           ServerSettingsModule.resolveSourceControlWriterModelSelection(restored),
-          sourceControlWriterModelSelection,
+          restored.textGenerationModelSelection,
         );
       }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
@@ -481,7 +483,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.deepEqual(next.providerInstances[codexId], {
         driver: ProviderDriverKind.make("codex"),
         displayName: "Codex Work",
-        enabled: true,
+        enabled: false,
         config: { homePath: "~/.codex" },
       });
     }).pipe(Effect.provide(makeServerSettingsLayer())),
@@ -511,13 +513,14 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       // A lone in-config flag is lifted to the envelope and stripped.
       assert.deepEqual(settings.providerInstances[codexWorkId], {
         driver: ProviderDriverKind.make("codex"),
-        enabled: true,
+        enabled: false,
         config: { homePath: "~/.codex" },
       });
       // A malformed flag is left alone so driver schema validation can
       // surface it instead of the fold silently repairing the config.
       assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("cursor")], {
         driver: ProviderDriverKind.make("cursor"),
+        enabled: false,
         config: { enabled: "nope" },
       });
     }).pipe(Effect.provide(makeServerSettingsLayer())),
@@ -568,7 +571,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       });
 
       assert.deepEqual(next.providers.codex, {
-        enabled: true,
+        enabled: false,
         binaryPath: "/opt/homebrew/bin/codex",
         homePath: "",
         shadowHomePath: "",
@@ -576,7 +579,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         customModels: [],
       });
       assert.deepEqual(next.providers.claudeAgent, {
-        enabled: true,
+        enabled: false,
         binaryPath: "/opt/homebrew/bin/claude",
         homePath: "",
         customModels: [],
