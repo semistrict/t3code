@@ -550,6 +550,62 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
 );
 export type OpenCodeSettings = typeof OpenCodeSettings.Type;
 
+export const OpenSweSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    apiUrl: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Backend URL",
+        description: "Open SWE backend to use. Leave blank to use the launcher's endpoint.",
+        providerSettingsForm: {
+          placeholder: "https://open-swe.example.com",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    apiToken: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "API token",
+        description: "Optional bearer token for a directly exposed LangGraph API.",
+        providerSettingsForm: {
+          control: "password",
+          placeholder: "Optional",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    repository: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Repository",
+        description: "Optional GitHub owner/repository used for new remote threads.",
+        providerSettingsForm: {
+          placeholder: "owner/repository",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    graphId: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("agent")),
+      Schema.annotateKey({
+        title: "Graph ID",
+        description: "Graph entrypoint used for agent runs.",
+        providerSettingsForm: {
+          placeholder: "agent",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+  },
+  { order: ["apiUrl", "apiToken", "repository", "graphId"] },
+);
+export type OpenSweSettings = typeof OpenSweSettings.Type;
+
 export const ObservabilitySettings = Schema.Struct({
   otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   otlpMetricsUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),

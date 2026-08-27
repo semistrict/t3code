@@ -73,6 +73,18 @@ const recordProviderUsage = (provider: string, instanceId: string | null = provi
   });
 
 it.layer(NodeServices.layer)("server settings", (it) => {
+  it("routes text generation through Open SWE in provider-only mode", () => {
+    const settings = ServerSettingsModule.resolveTextGenerationProviderForMode(
+      DEFAULT_SERVER_SETTINGS,
+      true,
+    );
+
+    assert.deepEqual(settings.textGenerationModelSelection, {
+      instanceId: ProviderInstanceId.make("open-swe"),
+      model: "default",
+    });
+  });
+
   it.effect("preserves context when reading a provider environment secret fails", () => {
     const platformCause = PlatformError.systemError({
       _tag: "PermissionDenied",

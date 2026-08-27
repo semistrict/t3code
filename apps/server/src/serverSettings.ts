@@ -292,10 +292,26 @@ function restoreUsedProviders(
   };
 }
 
-function resolveTextGenerationProvider(settings: ServerSettings): ServerSettings {
+export function resolveTextGenerationProviderForMode(
+  settings: ServerSettings,
+  openSweOnly: boolean,
+): ServerSettings {
+  if (openSweOnly) {
+    return {
+      ...settings,
+      textGenerationModelSelection: {
+        instanceId: ProviderInstanceId.make("open-swe"),
+        model: "default",
+      },
+    };
+  }
   return isModelSelectionProviderEnabled(settings, settings.textGenerationModelSelection)
     ? settings
     : fallbackTextGenerationProvider(settings);
+}
+
+function resolveTextGenerationProvider(settings: ServerSettings): ServerSettings {
+  return resolveTextGenerationProviderForMode(settings, process.env.OPEN_SWE_PROVIDER_ONLY === "1");
 }
 
 function fallbackTextGenerationProvider(settings: ServerSettings): ServerSettings {

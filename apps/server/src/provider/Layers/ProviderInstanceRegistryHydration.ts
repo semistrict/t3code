@@ -73,7 +73,9 @@ import { ProviderInstanceRegistryMutableLayer } from "./ProviderInstanceRegistry
 export const deriveProviderInstanceConfigMap = (
   settings: ServerSettings,
 ): ProviderInstanceConfigMap => {
-  const merged: Record<string, ProviderInstanceConfig> = { ...settings.providerInstances };
+  const merged: Record<string, ProviderInstanceConfig> = {
+    ...settings.providerInstances,
+  };
 
   for (const driver of BUILT_IN_DRIVERS) {
     const instanceId = defaultInstanceIdForDriver(driver.driverKind);
@@ -90,13 +92,13 @@ export const deriveProviderInstanceConfigMap = (
     // built-in driver kinds.
     const legacyKey = driver.driverKind as keyof ServerSettings["providers"];
     const legacyConfig = settings.providers[legacyKey];
-    if (legacyConfig === undefined) {
+    if (legacyConfig === undefined && driver.driverKind !== "open-swe") {
       continue;
     }
 
     merged[instanceId] = {
       driver: driver.driverKind,
-      config: legacyConfig,
+      config: legacyConfig ?? driver.defaultConfig(),
     };
   }
 
